@@ -527,3 +527,83 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
 }
+
+/* Node List */
+.node-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.node-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+  font-size: 13px;
+}
+
+.node-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.node-item.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.node-icon {
+  font-size: 14px;
+}
+
+.node-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-status {
+  font-size: 10px;
+}
+
+.node-status.online {
+  color: var(--success);
+}
+
+.node-status.offline {
+  color: var(--text-secondary);
+}
+
+.node-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.node-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.node-status-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.node-status-badge.online {
+  background: rgba(63, 185, 80, 0.1);
+  color: var(--success);
+}
+
+.node-status-badge.offline {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}

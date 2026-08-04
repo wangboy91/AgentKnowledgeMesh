@@ -1,0 +1,19 @@
+# Docker Compose for Node client
+# Usage: docker compose -f docker-compose.node.yml up -d
+
+services:
+  agentvault-node:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    container_name: agentvault-node
+    environment:
+      - AV_HUB_URL=ws://host.docker.internal:8000/ws
+      - AV_HUB_API_URL=http://host.docker.internal:8000/api
+      - AV_NODE_NAME=MyDockerNode
+      - AV_KNOWLEDGE_ROOTS=/knowledge
+    volumes:
+      - ${KNOWLEDGE_DIR:-~/Knowledge}:/knowledge:ro
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

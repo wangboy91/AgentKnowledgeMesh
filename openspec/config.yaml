@@ -1,20 +1,43 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  AgentVault is a distributed personal knowledge base system for AI Agents.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Tech Stack:
+    - Backend: Python 3.11 + FastAPI (async)
+    - Database: SQLite / PostgreSQL (switchable via AV_DB_TYPE)
+    - ORM: SQLAlchemy 2.0 (async) with aiosqlite or asyncpg
+    - Frontend: React 18 + Vite + TypeScript
+    - Markdown: react-markdown + remark-gfm
+    - Communication: WebSocket (FastAPI native)
+    - Package Manager: uv (10-100x faster than pip)
+
+  Architecture:
+    - Hub + Node distributed architecture
+    - Hub: Web UI + API Server + WebSocket Server
+    - Node: Lightweight client on each machine
+    - Communication: JSON over WebSocket
+
+  Conventions:
+    - Use uv for all Python package management
+    - Python files use type hints throughout
+    - React components use functional style with hooks
+    - CSS uses CSS variables for theming (dark/light)
+    - API responses are JSON
+    - WebSocket messages are JSON with "type" field
+
+  Domain:
+    - Knowledge base: Markdown files organized in directories
+    - Documents: Indexed with SHA256 hash for incremental sync
+    - Nodes: Auto-register with UUID, heartbeat for status
+    - Search: Keyword-based (SQLite LIKE), future: vector/RAG
+
+rules:
+  proposal:
+    - Keep proposals focused on single features
+    - Include non-goals section
+    - Consider both Hub and Node impact
+  tasks:
+    - Break tasks into max 2-hour chunks
+    - Include verification steps
+    - Test with both SQLite and PostgreSQL if touching DB

@@ -49,6 +49,10 @@ app.add_middleware(
 from api.router import router  # noqa: E402
 app.include_router(router, prefix="/api")
 
+# WebSocket 端点
+from services.websocket import websocket_endpoint  # noqa: E402
+app.add_api_websocket_route("/ws", websocket_endpoint)
+
 
 @app.get("/api/health")
 async def health():

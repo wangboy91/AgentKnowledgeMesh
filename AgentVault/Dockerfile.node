@@ -1,0 +1,22 @@
+# Node client Dockerfile
+FROM python:3.11-slim-bookworm
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+# Install dependencies
+COPY node/pyproject.toml node/.python-version ./
+RUN uv sync --no-dev --no-install-project
+
+# Copy node code
+COPY node/ .
+
+# Environment variables
+ENV AV_HUB_URL=ws://hub:8000/ws
+ENV AV_HUB_API_URL=http://hub:8000/api
+ENV AV_KNOWLEDGE_ROOTS=/knowledge
+
+# Run
+CMD ["uv", "run", "python", "main.py"]

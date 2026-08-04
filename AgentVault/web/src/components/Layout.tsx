@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useTheme } from '../ThemeContext'
 import FileTree from './FileTree'
+import NodeList from './NodeList'
 import SearchBar from './SearchBar'
 import ResizeHandle from './ResizeHandle'
 
@@ -13,11 +14,14 @@ export default function Layout() {
   const location = useLocation()
   const { theme, toggleTheme } = useTheme()
   const isKnowledge = location.pathname.startsWith('/knowledge')
+  const isNodes = location.pathname.startsWith('/nodes')
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem('agentvault-sidebar-width')
     return saved ? parseInt(saved, 10) : DEFAULT_SIDEBAR_WIDTH
   })
+
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
 
   const handleResize = useCallback((width: number) => {
     setSidebarWidth(width)
@@ -44,9 +48,19 @@ export default function Layout() {
           <Link to="/knowledge" className={`nav-link ${isKnowledge ? 'active' : ''}`}>
             📚 Knowledge
           </Link>
+          <Link to="/nodes" className={`nav-link ${isNodes ? 'active' : ''}`}>
+            🌐 Nodes
+          </Link>
         </nav>
 
-        {isKnowledge && <FileTree />}
+        {isKnowledge && (
+          <>
+            <div style={{ padding: '8px', borderBottom: '1px solid var(--border-color)' }}>
+              <NodeList onSelectNode={setSelectedNodeId} selectedNodeId={selectedNodeId} />
+            </div>
+            <FileTree />
+          </>
+        )}
       </aside>
 
       <ResizeHandle

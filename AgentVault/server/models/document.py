@@ -2,7 +2,8 @@
 
 对应设计文档中的 documents 表：
 - id: 主键
-- path: 文件相对路径（唯一）
+- node_id: 所属节点ID（本地文档为空或"local"）
+- path: 文件相对路径
 - title: 文档标题（首行 # 或文件名）
 - hash: 文件 SHA256，用于变更检测
 - size: 文件大小（字节）
@@ -13,7 +14,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Integer, String, Text, DateTime, func
+from sqlalchemy import Integer, String, Text, DateTime, func, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db import Base
@@ -23,9 +24,13 @@ class Document(Base):
     """文档索引模型."""
 
     __tablename__ = "documents"
+    __table_args__ = (
+        UniqueConstraint("node_id", "path", name="uq_node_path"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    path: Mapped[str] = mapped_column(String(1024), unique=True, nullable=False, index=True)
+    node_id: Mapped[str] = mapped_column(String(36), default="local", index=True)  # 节点ID，本地为"local"
+    path: Mapped[str] = mapped_column(String(1024), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
     hash: Mapped[str] = mapped_column(String(64), nullable=False)
     size: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -39,6 +44,7 @@ class Document(Base):
         import json
         result = {
             "id": self.id,
+            "node_id": self.node_id,
             "path": self.path,
             "title": self.title,
             "hash": self.hash,
