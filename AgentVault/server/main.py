@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI):
     # 启动时初始化数据库
     await init_db()
     print(f"✅ AgentVault v{settings.app_version} started")
-    print(f"📁 Knowledge root: {settings.knowledge_path}")
+    print(f"📁 Knowledge roots: {', '.join(str(p) for p in settings.knowledge_paths)}")
     print(f"💾 Database: {settings.db_path}")
     yield
     # 关闭时清理资源

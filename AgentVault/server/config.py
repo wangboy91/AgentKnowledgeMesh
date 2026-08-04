@@ -3,6 +3,9 @@
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
+# 项目根目录（server 的父目录）
+PROJECT_ROOT = Path(__file__).parent.parent
+
 
 class Settings(BaseSettings):
     """应用配置，支持环境变量覆盖."""
@@ -38,7 +41,7 @@ class Settings(BaseSettings):
 
     model_config = {
         "env_prefix": "AV_",
-        "env_file": ".env",
+        "env_file": str(PROJECT_ROOT / ".env"),
     }
 
     @property
