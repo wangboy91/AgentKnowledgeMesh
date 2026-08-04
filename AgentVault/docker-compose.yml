@@ -1,0 +1,59 @@
+services:
+  # Main application (SQLite mode - default)
+  agentvault:
+    build: .
+    container_name: agentvault
+    ports:
+      - "8000:8000"
+    volumes:
+      # 挂载本地知识库目录（修改为你的实际路径）
+      - ${KNOWLEDGE_DIR:-~/Knowledge}:/knowledge:ro
+      # 持久化数据库
+      - agentvault-data:/app/data
+    environment:
+      - AV_KNOWLEDGE_ROOT=/knowledge
+      - AV_DB_TYPE=sqlite
+      - AV_DB_PATH=/app/data/agentvault.db
+    restart: unless-stopped
+
+  # Uncomment below for PostgreSQL mode
+  # agentvault-pg:
+  #   build: .
+  #   container_name: agentvault
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ${KNOWLEDGE_DIR:-~/Knowledge}:/knowledge:ro
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   environment:
+  #     - AV_KNOWLEDGE_ROOT=/knowledge
+  #     - AV_DB_TYPE=postgres
+  #     - AV_DB_HOST=postgres
+  #     - AV_DB_PORT=5432
+  #     - AV_DB_NAME=agentvault
+  #     - AV_DB_USER=postgres
+  #     - AV_DB_PASSWORD=${POSTGRES_PASSWORD:-agentvault}
+  #   restart: unless-stopped
+
+  # PostgreSQL (optional - uncomment to use)
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: agentvault-postgres
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   environment:
+  #     - POSTGRES_DB=agentvault
+  #     - POSTGRES_USER=postgres
+  #     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-agentvault}
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 5
+  #   restart: unless-stopped
+
+volumes:
+  agentvault-data:
+  # postgres-data:
