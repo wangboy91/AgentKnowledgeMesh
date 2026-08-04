@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, Document } from '../api/client'
+import { api } from '../api/client'
 
 interface TreeNode {
   [key: string]: TreeNode | { _title: string; _path: string }
@@ -9,6 +9,7 @@ interface TreeNode {
 export default function FileTree() {
   const [tree, setTree] = useState<TreeNode>({})
   const [loading, setLoading] = useState(true)
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -26,6 +27,18 @@ export default function FileTree() {
     }
   }
 
+  function toggleFolder(path: string) {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) {
+        next.delete(path)
+      } else {
+        next.add(path)
+      }
+      return next
+    })
+  }
+
   function renderNode(name: string, node: TreeNode | any, path = ''): React.ReactNode {
     const currentPath = path ? `${path}/${name}` : name
 
@@ -34,31 +47,42 @@ export default function FileTree() {
       return (
         <div
           key={node._path}
-          className="tree-item"
+          className="tree-item tree-file-item"
           onClick={() => navigate(`/knowledge/${node._path}`)}
         >
-          <span className="tree-file">📄</span>
-          <span>{node._title || name}</span>
+          <span className="tree-icon">📄</span>
+          <span className="tree-label">{node._title || name}</span>
         </div>
       )
     }
 
     // 文件夹节点
+    const isExpanded = expandedFolders.has(currentPath)
     const children = Object.entries(node)
       .filter(([key]) => !key.startsWith('_'))
-      .sort(([a], [b]) => a.localeCompare(b))
+      .sort(([a, aNode], [b, bNode]) => {
+        // 文件夹排在文件前面
+        const aIsFolder = !aNode._path
+        const bIsFolder = !bNode._path
+        if (aIsFolder && !bIsFolder) return -1
+        if (!aIsFolder && bIsFolder) return 1
+        return a.localeCompare(b)
+      })
 
     return (
-      <div key={currentPath}>
-        <div className="tree-item">
-          <span className="tree-folder">📁</span>
-          <span>{name}</span>
+      <div key={currentPath} className="tree-folder-container">
+        <div className="tree-item tree-folder-item" onClick={() => toggleFolder(currentPath)}>
+          <span className="tree-arrow">{isExpanded ? '▼' : '▶'}</span>
+          <span className="tree-icon">{isExpanded ? '📂' : '📁'}</span>
+          <span className="tree-label">{name}</span>
         </div>
-        <div style={{ paddingLeft: '16px' }}>
-          {children.map(([childName, childNode]) =>
-            renderNode(childName, childNode, currentPath)
-          )}
-        </div>
+        {isExpanded && (
+          <div className="tree-children">
+            {children.map(([childName, childNode]) =>
+              renderNode(childName, childNode, currentPath)
+            )}
+          </div>
+        )}
       </div>
     )
   }

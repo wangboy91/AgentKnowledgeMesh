@@ -59,33 +59,15 @@ export default function SearchBar() {
       />
 
       {showResults && results.length > 0 && (
-        <div style={{
-          position: 'absolute',
-          top: '100%',
-          left: '16px',
-          right: '16px',
-          background: 'var(--bg-secondary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '8px',
-          maxHeight: '400px',
-          overflowY: 'auto',
-          zIndex: 100,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-        }}>
+        <div className="search-dropdown">
           {results.map((doc) => (
             <div
               key={doc.id}
+              className="search-result-item"
               onClick={() => handleSelect(doc)}
-              style={{
-                padding: '12px 16px',
-                cursor: 'pointer',
-                borderBottom: '1px solid var(--border-color)',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
-              <div style={{ fontWeight: 500 }}>{doc.title}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{doc.path}</div>
+              <div className="search-result-title">{doc.title}</div>
+              <div className="search-result-path">{doc.path}</div>
             </div>
           ))}
         </div>

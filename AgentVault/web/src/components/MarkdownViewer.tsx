@@ -20,16 +20,7 @@ export default function MarkdownViewer({ document }: Props) {
             <>
               &nbsp;·&nbsp;
               {document.tags.map((tag) => (
-                <span
-                  key={tag}
-                  style={{
-                    background: 'var(--bg-tertiary)',
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    fontSize: '12px',
-                    marginRight: '4px',
-                  }}
-                >
+                <span key={tag} className="doc-tag">
                   {tag}
                 </span>
               ))}
