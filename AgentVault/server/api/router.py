@@ -5,12 +5,14 @@ from fastapi import APIRouter
 from api.documents import router as documents_router
 from api.search import router as search_router
 from api.nodes import router as nodes_router
+from api.context import router as context_router
 
 router = APIRouter()
 
 router.include_router(documents_router, prefix="/documents", tags=["documents"])
 router.include_router(search_router, prefix="/search", tags=["search"])
 router.include_router(nodes_router, prefix="/nodes", tags=["nodes"])
+router.include_router(context_router, prefix="/context", tags=["context"])
 
 
 @router.get("/stats")
