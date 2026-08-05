@@ -1,8 +1,8 @@
-# AgentVault V0.1 产品与技术设计文档
+# AgentKnowledgeMesh V0.1 产品与技术设计文档
 
 ## 项目定位
 
-AgentVault 是一个面向 AI Agent 时代的分布式个人知识库系统。
+AgentKnowledgeMesh 是一个面向 AI Agent 时代的分布式个人知识库系统。
 
 核心目标：
 
@@ -35,7 +35,7 @@ AgentVault 是一个面向 AI Agent 时代的分布式个人知识库系统。
 
 采用 Hub + Node 分布式架构。
 
-                     AgentVault Hub
+                     AgentKnowledgeMesh Hub
                   (Web + API Server)
                            |
                     WebSocket / HTTP
@@ -289,7 +289,7 @@ Claude Code:
     设计CRM系统
 
 
-    AgentVault:
+    AgentKnowledgeMesh:
 
     搜索相关知识
 
@@ -474,7 +474,7 @@ Agent接入。
 
     ↓
 
-    AgentVault
+    AgentKnowledgeMesh
 
     ↓
 
@@ -519,7 +519,7 @@ Agent接入。
 
 # 项目名称
 
-AgentVault
+AgentKnowledgeMesh
 
 一句话：
 

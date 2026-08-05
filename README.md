@@ -1,8 +1,8 @@
-# AgentVault
+# AgentKnowledgeMesh
 
 > Your distributed memory layer for AI Agents.
 
-AgentVault 是一个面向 AI Agent 时代的分布式个人知识库系统。
+AgentKnowledgeMesh 是一个面向 AI Agent 时代的分布式知识库系统，适用于个人和企业。
 
 ## Features
 
@@ -40,7 +40,7 @@ AgentVault 是一个面向 AI Agent 时代的分布式个人知识库系统。
 ## Architecture
 
 ```
-                    AgentVault Hub
+                    AgentKnowledgeMesh Hub
                  (Web + API + WS Server)
                           |
                    WebSocket / HTTP
@@ -152,7 +152,7 @@ make dev-node      # Start node client
 ## Project Structure
 
 ```
-AgentVault/
+AgentKnowledgeMesh/
 ├── server/              # Hub backend (FastAPI)
 │   ├── main.py          # Entry point
 │   ├── config.py        # Configuration

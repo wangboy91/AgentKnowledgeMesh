@@ -87,7 +87,7 @@
 ### MCP Server
 
 - Model Context Protocol support
-- Let Claude Code, Codex, etc. call AgentVault
+- Let Claude Code, Codex, etc. call AgentKnowledgeMesh
 - Standard tool interface
 
 ## V1.0 - Advanced Features (Planned)

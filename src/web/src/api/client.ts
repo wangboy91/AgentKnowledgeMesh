@@ -1,5 +1,5 @@
 /**
- * AgentVault API 客户端
+ * AgentKnowledgeMesh API 客户端
  */
 
 const BASE_URL = '/api'

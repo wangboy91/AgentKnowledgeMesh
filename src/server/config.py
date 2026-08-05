@@ -1,4 +1,4 @@
-"""AgentVault 配置管理."""
+"""AgentKnowledgeMesh 配置管理."""
 
 from pathlib import Path
 from pydantic_settings import BaseSettings
@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     """应用配置，支持环境变量覆盖."""
 
     # 服务配置
-    app_name: str = "AgentVault"
+    app_name: str = "AgentKnowledgeMesh"
     app_version: str = "0.1.0"
     host: str = "0.0.0.0"
     port: int = 8000

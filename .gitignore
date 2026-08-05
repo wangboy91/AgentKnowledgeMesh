@@ -5,11 +5,14 @@ __pycache__/
 *.so
 .Python
 venv/
+.venv/
+
+# Environment
 .env
 
 # Node
 node_modules/
-web/dist/
+dist/
 
 # Database
 *.db
@@ -27,3 +30,9 @@ Thumbs.db
 
 # Docker
 .docker/
+
+# OpenSpec
+openspec/.DS_Store
+
+# CodeGraph
+.codegraph/

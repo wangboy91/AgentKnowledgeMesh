@@ -33,7 +33,7 @@ export default function Layout() {
       <aside className="sidebar" style={{ width: sidebarWidth }}>
         <div className="sidebar-header">
           <div className="sidebar-header-left">
-            <h1>🔐 AgentVault</h1>
+            <h1>🔐 AgentKnowledgeMesh</h1>
             <p>Distributed Knowledge OS</p>
           </div>
           <button className="theme-toggle" onClick={toggleTheme} title="Toggle theme">

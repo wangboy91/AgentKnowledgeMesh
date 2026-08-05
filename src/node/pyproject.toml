@@ -1,7 +1,7 @@
 [project]
 name = "agentvault-node"
 version = "0.2.0"
-description = "AgentVault Node Client"
+description = "AgentKnowledgeMesh Node Client"
 requires-python = ">=3.11"
 dependencies = [
     "websockets>=12.0",

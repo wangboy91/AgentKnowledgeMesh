@@ -21,7 +21,7 @@ GET /api/health
 Response:
 ```json
 {
-  "name": "AgentVault",
+  "name": "AgentKnowledgeMesh",
   "version": "0.2.0",
   "status": "running"
 }

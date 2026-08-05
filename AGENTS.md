@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-AgentVault is a distributed personal knowledge base system designed for the AI Agent era.
+AgentKnowledgeMesh is a distributed knowledge base system designed for the AI Agent era, suitable for both individuals and enterprises.
 It enables multiple computers to share Markdown knowledge files, Agent memory files, and
 project documents through a unified knowledge network.
 
@@ -13,7 +13,7 @@ The system uses a Hub + Node architecture where:
 ## Repository Layout
 
 ```
-AgentVault/
+AgentKnowledgeMesh/
 ├── server/                    # Hub backend (FastAPI + SQLAlchemy)
 │   ├── main.py                # FastAPI entry point, WebSocket endpoint
 │   ├── config.py              # Settings with pydantic-settings

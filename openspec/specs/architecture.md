@@ -2,7 +2,7 @@
 
 ## Overview
 
-AgentVault uses a Hub + Node distributed architecture for managing knowledge across multiple machines.
+AgentKnowledgeMesh uses a Hub + Node distributed architecture for managing knowledge across multiple machines.
 
 ## Components
 

@@ -1,7 +1,7 @@
 schema: spec-driven
 
 context: |
-  AgentVault is a distributed personal knowledge base system for AI Agents.
+  AgentKnowledgeMesh is a distributed personal knowledge base system for AI Agents.
 
   Tech Stack:
     - Backend: Python 3.11 + FastAPI (async)
