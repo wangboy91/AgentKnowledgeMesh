@@ -2,7 +2,7 @@
 name = "agentvault-server"
 version = "0.1.0"
 description = "AgentKnowledgeMesh - Distributed Knowledge OS for AI Agents"
-readme = "../README.md"
+readme = "../../README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
