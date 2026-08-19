@@ -84,10 +84,18 @@ if static_dir.exists():
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "main:app",
-        host=settings.host,
-        port=settings.port,
-        reload=settings.debug,
-    )
+    import sys
+
+    # 支持 --mcp 参数以 stdio 方式运行 MCP Server
+    if "--mcp" in sys.argv:
+        import asyncio
+        from services.mcp_server import run_mcp_stdio
+        asyncio.run(run_mcp_stdio())
+    else:
+        import uvicorn
+        uvicorn.run(
+            "main:app",
+            host=settings.host,
+            port=settings.port,
+            reload=settings.debug,
+        )

@@ -26,6 +26,19 @@ AgentKnowledgeMesh 是一个面向 AI Agent 时代的分布式知识库系统，
 - ✅ 远程文档访问
 - ✅ 节点管理界面
 
+### V0.3 - Agent 集成
+
+- ✅ Context API（`/api/context`）
+- ✅ MCP Server 集成
+- ⏳ 向量搜索 (RAG)
+
+### V1.0 - 高级功能（规划中）
+
+- ⏳ 知识图谱
+- ⏳ 向量语义搜索
+- ⏳ 在线文档转换 (PDF/Word → MD)
+- ⏳ 在线 Markdown 编辑器
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -36,6 +49,7 @@ AgentKnowledgeMesh 是一个面向 AI Agent 时代的分布式知识库系统，
 | Frontend | React + Vite + TypeScript |
 | Markdown | react-markdown + remark-gfm |
 | Communication | WebSocket |
+| AI Integration | MCP (Model Context Protocol) |
 
 ## Architecture
 
@@ -80,12 +94,12 @@ open http://localhost:8000
 
 ```bash
 # 后端
-cd server
+cd src/server
 uv sync
 uv run python main.py
 
 # 前端（另一个终端）
-cd web
+cd src/web
 npm install
 npm run dev
 
@@ -96,7 +110,7 @@ open http://localhost:5173
 **Node 端（另一台机器）:**
 
 ```bash
-cd node
+cd src/node
 uv sync
 
 # 配置 Hub 地址
@@ -113,6 +127,53 @@ Or use Makefile:
 make dev-backend   # Start Hub backend
 make dev-frontend  # Start frontend
 make dev-node      # Start node client
+```
+
+## MCP Server 集成
+
+AgentKnowledgeMesh 支持 MCP (Model Context Protocol)，让 AI 工具可以直接访问知识库。
+
+### 配置 Claude Code
+
+在项目根目录创建 `.claude/mcp.json`：
+
+```json
+{
+  "mcpServers": {
+    "agentknowledge": {
+      "command": "uv",
+      "args": ["run", "python", "main.py", "--mcp"],
+      "cwd": "src/server"
+    }
+  }
+}
+```
+
+或使用 HTTP 模式：
+
+```json
+{
+  "mcpServers": {
+    "agentknowledge": {
+      "url": "http://localhost:8000/api/mcp/sse"
+    }
+  }
+}
+```
+
+### 可用工具
+
+| 工具 | 描述 |
+|------|------|
+| `search_documents` | 搜索知识库文档 |
+| `get_document` | 获取文档详情 |
+| `list_documents` | 列出文档列表 |
+
+### 测试 MCP
+
+```bash
+# 使用 MCP Inspector
+npx @modelcontextprotocol/inspector http://localhost:8000/api/mcp/sse
 ```
 
 ## API Endpoints
@@ -132,6 +193,12 @@ make dev-node      # Start node client
 |--------|------|-------------|
 | GET | `/api/search?q=xxx` | Search documents |
 
+### Context (for AI Agents)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/context?q=xxx` | Get context for AI prompt |
+
 ### Nodes
 
 | Method | Path | Description |
@@ -142,44 +209,62 @@ make dev-node      # Start node client
 | POST | `/api/nodes/:id/sync` | Request sync |
 | DELETE | `/api/nodes/:id` | Delete node |
 
+### MCP
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/mcp/sse` | MCP SSE endpoint |
+| POST | `/api/mcp/messages` | MCP messages endpoint |
+
 ### System
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/stats` | System stats |
+| GET | `/api/health` | Health check |
 | WS | `/ws` | WebSocket endpoint |
 
 ## Project Structure
 
 ```
 AgentKnowledgeMesh/
-├── server/              # Hub backend (FastAPI)
-│   ├── main.py          # Entry point
-│   ├── config.py        # Configuration
-│   ├── db.py            # Database connection
-│   ├── models/          # SQLAlchemy models
-│   │   ├── document.py  # Document model
-│   │   └── node.py      # Node model
-│   ├── services/        # Business logic
-│   │   ├── scanner.py   # Markdown scanner
-│   │   ├── indexer.py   # Index manager
-│   │   └── websocket.py # WebSocket service
-│   └── api/             # REST API handlers
-├── node/                # Node client
-│   ├── main.py          # Entry point
-│   ├── config.py        # Configuration
-│   ├── scanner.py       # Local scanner
-│   └── hub_client.py    # WebSocket client
-├── web/                 # React frontend
-│   └── src/
-│       ├── components/  # UI components
-│       ├── pages/       # Page views
-│       └── api/         # API client
-├── Dockerfile           # Hub image
-├── Dockerfile.node      # Node image
-├── docker-compose.yml   # Hub deployment
-├── docker-compose.node.yml  # Node deployment
-└── Makefile
+├── src/
+│   ├── server/            # Hub backend (FastAPI)
+│   │   ├── main.py        # Entry point
+│   │   ├── config.py      # Configuration
+│   │   ├── db.py          # Database connection
+│   │   ├── models/        # SQLAlchemy models
+│   │   ├── services/      # Business logic
+│   │   │   ├── scanner.py
+│   │   │   ├── indexer.py
+│   │   │   ├── websocket.py
+│   │   │   └── mcp_server.py  # MCP Server
+│   │   └── api/           # REST API handlers
+│   │       ├── documents.py
+│   │       ├── search.py
+│   │       ├── nodes.py
+│   │       ├── context.py
+│   │       └── mcp.py
+│   ├── node/              # Node client
+│   │   ├── main.py
+│   │   ├── config.py
+│   │   ├── scanner.py
+│   │   └── hub_client.py
+│   └── web/               # React frontend
+│       └── src/
+│           ├── components/
+│           ├── pages/
+│           └── api/
+├── openspec/              # OpenSpec documentation
+├── AGENTS.md              # AI Agent guide
+├── README.md
+├── .gitignore
+├── Makefile
+├── Dockerfile
+├── Dockerfile.node
+├── docker-compose.yml
+├── docker-compose.pg.yml
+└── docker-compose.node.yml
 ```
 
 ## Configuration
@@ -228,7 +313,7 @@ AV_DB_TYPE=sqlite AV_DB_PATH=data/agentvault.db
 **PostgreSQL** - for production:
 
 ```bash
-cd server && uv sync --extra postgres
+cd src/server && uv sync --extra postgres
 export AV_DB_TYPE=postgres
 export AV_DB_HOST=localhost
 export AV_DB_PASSWORD=your_password
@@ -264,5 +349,9 @@ AV_HUB_URL=ws://hub-ip:8000/ws docker compose -f docker-compose.node.yml up -d
 
 ## Roadmap
 
-- V0.3: Agent Context API, MCP Server integration
-- V1.0: Knowledge Graph, Vector search (RAG)
+- V0.3: ✅ Agent Context API, ✅ MCP Server
+- V1.0: ⏳ Knowledge Graph, ⏳ Vector search (RAG), ⏳ Document conversion, ⏳ Online editor
+
+## License
+
+MIT

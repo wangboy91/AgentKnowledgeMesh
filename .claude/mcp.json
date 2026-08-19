@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "agentknowledge": {
+      "command": "uv",
+      "args": ["run", "python", "main.py", "--mcp"],
+      "cwd": "src/server"
+    }
+  }
+}
