@@ -30,12 +30,12 @@ AgentKnowledgeMesh 是一个面向 AI Agent 时代的分布式知识库系统，
 
 - ✅ Context API（`/api/context`）
 - ✅ MCP Server 集成
-- ⏳ 向量搜索 (RAG)
+- ✅ 向量搜索 (RAG)
+- ✅ 语义搜索 API
 
 ### V1.0 - 高级功能（规划中）
 
 - ⏳ 知识图谱
-- ⏳ 向量语义搜索
 - ⏳ 在线文档转换 (PDF/Word → MD)
 - ⏳ 在线 Markdown 编辑器
 
@@ -208,6 +208,15 @@ npx @modelcontextprotocol/inspector http://localhost:8000/api/mcp/sse
 | GET | `/api/nodes/:id/documents` | Node documents |
 | POST | `/api/nodes/:id/sync` | Request sync |
 | DELETE | `/api/nodes/:id` | Delete node |
+
+### RAG (Vector Search)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/rag/search?q=xxx` | Semantic search |
+| GET | `/api/rag/context?q=xxx` | RAG context for AI |
+| POST | `/api/rag/index` | Index all documents |
+| GET | `/api/rag/stats` | Vector store stats |
 
 ### MCP
 

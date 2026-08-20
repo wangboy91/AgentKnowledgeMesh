@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     scan_extensions: list[str] = [".md"]
     max_file_size_mb: int = 10
 
+    # 向量搜索配置
+    embedding_model: str = "all-MiniLM-L6-v2"
+    chunk_size: int = 500
+    chunk_overlap: int = 50
+
     model_config = {
         "env_prefix": "AV_",
         "env_file": str(PROJECT_ROOT / ".env"),
