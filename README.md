@@ -33,11 +33,11 @@ AgentKnowledgeMesh 是一个面向 AI Agent 时代的分布式知识库系统，
 - ✅ 向量搜索 (RAG)
 - ✅ 语义搜索 API
 - ✅ 文档转换 (PDF/Word/HTML → MD)
+- ✅ 在线 Markdown 编辑器
 
 ### V1.0 - 高级功能（规划中）
 
 - ⏳ 知识图谱
-- ⏳ 在线 Markdown 编辑器
 
 ## Tech Stack
 

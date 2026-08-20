@@ -91,6 +91,30 @@ export const api = {
     return fetchJSON(`${BASE_URL}/documents/${id}`)
   },
 
+  /** 更新文档内容 */
+  updateDocument(id: number, content: string): Promise<Document> {
+    return fetch(`${BASE_URL}/documents/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    }).then(res => {
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+      return res.json()
+    })
+  },
+
+  /** 创建新文档 */
+  createDocument(path: string, title: string, content: string): Promise<Document> {
+    return fetch(`${BASE_URL}/documents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, title, content }),
+    }).then(res => {
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`)
+      return res.json()
+    })
+  },
+
   /** 触发扫描 */
   scanDocuments(): Promise<ScanStats> {
     return postJSON(`${BASE_URL}/documents/scan`)

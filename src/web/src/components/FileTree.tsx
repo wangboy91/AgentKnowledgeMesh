@@ -62,8 +62,8 @@ export default function FileTree() {
       .filter(([key]) => !key.startsWith('_'))
       .sort(([a, aNode], [b, bNode]) => {
         // 文件夹排在文件前面
-        const aIsFolder = !aNode._path
-        const bIsFolder = !bNode._path
+        const aIsFolder = !(aNode as any)._path
+        const bIsFolder = !(bNode as any)._path
         if (aIsFolder && !bIsFolder) return -1
         if (!aIsFolder && bIsFolder) return 1
         return a.localeCompare(b)

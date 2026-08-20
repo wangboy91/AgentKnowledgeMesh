@@ -607,3 +607,159 @@ body {
   background: var(--bg-tertiary);
   color: var(--text-secondary);
 }
+
+/* Knowledge Viewer */
+.knowledge-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.viewer-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.btn-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+
+.btn-edit:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Markdown Editor */
+.editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary);
+}
+
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.editor-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.editor-title {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.editor-changed {
+  color: var(--warning);
+  font-size: 13px;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-save {
+  background: var(--success);
+  color: #fff;
+  border: none;
+  padding: 8px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: opacity 0.15s;
+}
+
+.btn-save:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-cancel {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 8px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+
+.btn-cancel:hover {
+  background: var(--border-color);
+}
+
+.editor-body {
+  flex: 1;
+  overflow: hidden;
+}
+
+.editor-body [data-color-mode="auto"] {
+  --color-border-default: var(--border-color);
+  --color-canvas-default: var(--bg-primary);
+  --color-canvas-subtle: var(--bg-secondary);
+  --color-fg-default: var(--text-primary);
+  --color-fg-muted: var(--text-secondary);
+}
+
+.editor-status {
+  display: flex;
+  gap: 24px;
+  padding: 8px 24px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+}
+
+/* MDEditor theme override */
+.editor-body .w-md-editor {
+  --md-editor-bg: var(--bg-primary);
+  --md-editor-color: var(--text-primary);
+  border: none;
+  border-radius: 0;
+}
+
+.editor-body .w-md-editor-toolbar {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.editor-body .w-md-editor-content {
+  background: var(--bg-primary);
+}
+
+.editor-body .wmde-markdown {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.editor-body .w-md-editor-preview {
+  border-left: 1px solid var(--border-color);
+}

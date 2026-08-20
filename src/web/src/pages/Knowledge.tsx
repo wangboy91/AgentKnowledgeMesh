@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { api, Document } from '../api/client'
 import MarkdownViewer from '../components/MarkdownViewer'
+import MarkdownEditor from '../components/MarkdownEditor'
 
 export default function Knowledge() {
   const { '*': filePath } = useParams<{ '*': string }>()
   const [document, setDocument] = useState<Document | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     if (filePath) {
@@ -15,6 +17,8 @@ export default function Knowledge() {
     } else {
       setDocument(null)
     }
+    // 切换文档时退出编辑模式
+    setEditing(false)
   }, [filePath])
 
   async function loadDocument(path: string) {
@@ -37,6 +41,20 @@ export default function Knowledge() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // 保存文档
+  async function handleSave(content: string) {
+    if (!document) return
+
+    const updated = await api.updateDocument(document.id, content)
+    setDocument(updated)
+    setEditing(false)
+  }
+
+  // 取消编辑
+  function handleCancel() {
+    setEditing(false)
   }
 
   if (!filePath) {
@@ -65,5 +83,29 @@ export default function Knowledge() {
     return null
   }
 
-  return <MarkdownViewer document={document} />
+  // 编辑模式
+  if (editing) {
+    return (
+      <MarkdownEditor
+        document={document}
+        onSave={handleSave}
+        onCancel={handleCancel}
+      />
+    )
+  }
+
+  // 查看模式 - 添加编辑按钮
+  return (
+    <div className="knowledge-viewer">
+      <div className="viewer-toolbar">
+        <button
+          className="btn btn-edit"
+          onClick={() => setEditing(true)}
+        >
+          ✏️ 编辑
+        </button>
+      </div>
+      <MarkdownViewer document={document} />
+    </div>
+  )
 }
