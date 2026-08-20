@@ -32,11 +32,11 @@ AgentKnowledgeMesh 是一个面向 AI Agent 时代的分布式知识库系统，
 - ✅ MCP Server 集成
 - ✅ 向量搜索 (RAG)
 - ✅ 语义搜索 API
+- ✅ 文档转换 (PDF/Word/HTML → MD)
 
 ### V1.0 - 高级功能（规划中）
 
 - ⏳ 知识图谱
-- ⏳ 在线文档转换 (PDF/Word → MD)
 - ⏳ 在线 Markdown 编辑器
 
 ## Tech Stack
@@ -217,6 +217,15 @@ npx @modelcontextprotocol/inspector http://localhost:8000/api/mcp/sse
 | GET | `/api/rag/context?q=xxx` | RAG context for AI |
 | POST | `/api/rag/index` | Index all documents |
 | GET | `/api/rag/stats` | Vector store stats |
+
+### Document Conversion
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/convert/upload` | Upload and convert file |
+| POST | `/api/convert/url` | Convert from URL |
+
+Supported formats: PDF, DOCX, HTML
 
 ### MCP
 

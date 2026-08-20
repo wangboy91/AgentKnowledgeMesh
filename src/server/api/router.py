@@ -8,6 +8,7 @@ from api.nodes import router as nodes_router
 from api.context import router as context_router
 from api.mcp import router as mcp_router
 from api.rag import router as rag_router
+from api.convert import router as convert_router
 
 router = APIRouter()
 
@@ -17,6 +18,7 @@ router.include_router(nodes_router, prefix="/nodes", tags=["nodes"])
 router.include_router(context_router, prefix="/context", tags=["context"])
 router.include_router(mcp_router, prefix="/mcp", tags=["mcp"])
 router.include_router(rag_router, prefix="/rag", tags=["rag"])
+router.include_router(convert_router, prefix="/convert", tags=["convert"])
 
 
 @router.get("/stats")
