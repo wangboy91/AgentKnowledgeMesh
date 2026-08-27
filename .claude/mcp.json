@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "agentknowledge": {
-      "command": "uv",
-      "args": ["run", "agentvault", "--mcp"],
-      "cwd": "src/server"
-    }
-  }
-}
