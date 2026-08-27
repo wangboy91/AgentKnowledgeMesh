@@ -36,3 +36,7 @@ openspec/.DS_Store
 
 # CodeGraph
 .codegraph/
+
+# Claude Code / Codegraph 本地工作目录
+.claude/
+.codegraph/

@@ -96,6 +96,7 @@ open http://localhost:8000
 # 后端
 cd src/server
 uv sync
+cp .env.example .env   # 按需修改配置（见下方「配置说明」）
 uv run agentvault
 
 # 前端（另一个终端）
@@ -112,14 +113,33 @@ open http://localhost:5173
 ```bash
 cd src/node
 uv sync
-
-# 配置 Hub 地址
-export AV_HUB_URL=ws://hub-ip:8000/ws
-export AV_KNOWLEDGE_ROOTS=~/Knowledge
+cp .env.example .env   # 配置 Hub 地址和本地知识库目录
 
 # 启动
-uv run agentvault
+uv run python main.py
 ```
+
+## 配置说明
+
+所有配置通过环境变量管理，两个组件各有一份模板：
+
+| 组件 | 模板文件 | 说明 |
+|---|---|---|
+| Server (Hub) | `src/server/.env.example` | 数据库、向量库、嵌入模型、知识库目录 |
+| Node | `src/node/.env.example` | Hub 地址、本地知识库目录 |
+
+复制模板后按需修改，`.env` 已被 gitignore，密钥不会提交：
+
+```bash
+cd src/server && cp .env.example .env
+```
+
+**零配置即可启动**：默认使用 SQLite + 本地嵌入模型（首次运行会下载模型）。
+需要以下能力时再改配置：
+
+- **PostgreSQL 存储**：`AV_DB_TYPE=postgres` + 连接信息（向量表自动同库存放）
+- **中文语义搜索效果更好**：`AV_EMBEDDING_PROVIDER=ark` + 火山引擎 API Key
+- **指定知识库目录**：`AV_KNOWLEDGE_ROOTS=/path/to/docs`（多个用逗号分隔）
 
 Or use Makefile:
 

@@ -30,7 +30,7 @@ RUN mkdir -p /app/data
 
 # Environment variables
 ENV AV_DB_PATH=/app/data/agentvault.db
-ENV AV_KNOWLEDGE_ROOT=/knowledge
+ENV AV_KNOWLEDGE_ROOTS=/knowledge
 ENV AV_HOST=0.0.0.0
 ENV AV_PORT=8000
 

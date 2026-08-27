@@ -13,7 +13,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      - AV_KNOWLEDGE_ROOT=/knowledge
+      - AV_KNOWLEDGE_ROOTS=/knowledge
       - AV_DB_TYPE=postgres
       - AV_DB_HOST=postgres
       - AV_DB_PORT=5432

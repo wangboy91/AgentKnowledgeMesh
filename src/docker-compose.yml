@@ -11,7 +11,7 @@ services:
       # 持久化数据库
       - agentvault-data:/app/data
     environment:
-      - AV_KNOWLEDGE_ROOT=/knowledge
+      - AV_KNOWLEDGE_ROOTS=/knowledge
       - AV_DB_TYPE=sqlite
       - AV_DB_PATH=/app/data/agentvault.db
     restart: unless-stopped
@@ -28,7 +28,7 @@ services:
   #     postgres:
   #       condition: service_healthy
   #   environment:
-  #     - AV_KNOWLEDGE_ROOT=/knowledge
+  #     - AV_KNOWLEDGE_ROOTS=/knowledge
   #     - AV_DB_TYPE=postgres
   #     - AV_DB_HOST=postgres
   #     - AV_DB_PORT=5432

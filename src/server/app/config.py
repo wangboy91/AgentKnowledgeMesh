@@ -54,11 +54,12 @@ class Settings(BaseSettings):
     chunk_overlap: int = 50
 
     # 向量数据库配置（PostgreSQL + pgvector）
-    vector_db_host: str = "124.222.52.252"
-    vector_db_port: int = 15432
-    vector_db_name: str = "rag_test"
-    vector_db_user: str = "kong"
-    vector_db_password: str = "kong123"
+    # 各项留空时 fallback 到上面的主库配置（db_host 等），实现"一个数据库"部署
+    vector_db_host: str = ""
+    vector_db_port: int = 0
+    vector_db_name: str = ""
+    vector_db_user: str = ""
+    vector_db_password: str = ""
     vector_db_table: str = "document_vectors"
     # 向量维度: 0 表示自动检测（首次嵌入时确定）
     vector_dimensions: int = 0
@@ -80,6 +81,17 @@ class Settings(BaseSettings):
         db_file = Path(self.db_path)
         db_file.parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite+aiosqlite:///{db_file}"
+
+    @property
+    def vector_db_conn(self) -> dict:
+        """向量库连接参数（未配置时 fallback 到主库）."""
+        return {
+            "host": self.vector_db_host or self.db_host,
+            "port": self.vector_db_port or self.db_port,
+            "dbname": self.vector_db_name or self.db_name,
+            "user": self.vector_db_user or self.db_user,
+            "password": self.vector_db_password or self.db_password,
+        }
 
     @property
     def knowledge_paths(self) -> list[Path]:

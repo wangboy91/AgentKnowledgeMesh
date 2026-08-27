@@ -22,19 +22,14 @@ _table_ready = False
 
 
 def get_conn():
-    """获取 PostgreSQL 连接."""
+    """获取 PostgreSQL 连接（与主库共用配置，见 Settings.vector_db_conn）."""
     global _conn
     if _conn is None or _conn.closed:
-        _conn = psycopg2.connect(
-            host=settings.vector_db_host,
-            port=settings.vector_db_port,
-            dbname=settings.vector_db_name,
-            user=settings.vector_db_user,
-            password=settings.vector_db_password,
-        )
+        _conn = psycopg2.connect(**settings.vector_db_conn)
         _conn.autocommit = True
         logger.info(
-            f"Connected to vector DB: {settings.vector_db_host}:{settings.vector_db_port}/{settings.vector_db_name}"
+            f"Connected to vector DB: {settings.vector_db_conn['host']}"
+            f":{settings.vector_db_conn['port']}/{settings.vector_db_conn['dbname']}"
         )
     return _conn
 

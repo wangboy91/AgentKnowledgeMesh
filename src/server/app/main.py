@@ -37,7 +37,9 @@ async def lifespan(app: FastAPI):
 
     print(f"✅ AgentKnowledgeMesh v{settings.app_version} started")
     print(f"📁 Knowledge roots: {', '.join(str(p) for p in settings.knowledge_paths)}")
-    print(f"💾 Database: {settings.db_path}")
+    print(f"💾 Database: {settings.db_type} -> {settings.db_host}:{settings.db_port}/{settings.db_name}"
+          if settings.db_type == "postgres"
+          else f"💾 Database: {settings.db_path}")
     yield
     # 关闭时清理资源
     await close_db()
