@@ -17,6 +17,8 @@ WORKDIR /app
 
 # Install dependencies with uv
 COPY server/pyproject.toml server/.python-version ./
+# akm-shared 作为 path 依赖（../shared），需在 uv sync 前拷贝到 /shared
+COPY shared/ /shared
 RUN uv sync --no-dev --no-install-project
 
 # Copy backend code
@@ -29,10 +31,10 @@ COPY --from=frontend-builder /app/web/dist /app/static
 RUN mkdir -p /app/data
 
 # Environment variables
-ENV AV_DB_PATH=/app/data/agentvault.db
-ENV AV_KNOWLEDGE_ROOTS=/knowledge
-ENV AV_HOST=0.0.0.0
-ENV AV_PORT=8000
+ENV AKM_DB_PATH=/app/data/agentvault.db
+ENV AKM_KNOWLEDGE_ROOTS=/knowledge
+ENV AKM_HOST=0.0.0.0
+ENV AKM_PORT=8000
 
 # Expose port
 EXPOSE 8000

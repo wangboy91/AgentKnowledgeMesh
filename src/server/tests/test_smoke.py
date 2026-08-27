@@ -39,3 +39,20 @@ def test_rag_provider_configured():
     from app.services.rag.embeddings import _PROVIDERS
 
     assert settings.embedding_provider in _PROVIDERS
+
+
+def test_env_prefix(monkeypatch):
+    """环境变量前缀 AKM_ 生效，AV_ 前缀不再兼容."""
+    from app.config import Settings
+
+    monkeypatch.delenv("AKM_PORT", raising=False)
+    monkeypatch.delenv("AV_PORT", raising=False)
+
+    # AKM_ 前缀生效
+    monkeypatch.setenv("AKM_PORT", "9002")
+    assert Settings(_env_file=None).port == 9002
+
+    # AV_ 前缀不再被识别，回退到默认值 8000
+    monkeypatch.delenv("AKM_PORT", raising=False)
+    monkeypatch.setenv("AV_PORT", "9001")
+    assert Settings(_env_file=None).port == 8000

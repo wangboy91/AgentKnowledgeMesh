@@ -40,3 +40,5 @@ openspec/.DS_Store
 # Claude Code / Codegraph 本地工作目录
 .claude/
 .codegraph/
+
+.agents/

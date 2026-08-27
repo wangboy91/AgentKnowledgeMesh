@@ -1,5 +1,5 @@
 [project]
-name = "agentvault-server"
+name = "akm-server"
 version = "0.1.0"
 description = "AgentKnowledgeMesh - Distributed Knowledge OS for AI Agents"
 requires-python = ">=3.11"
@@ -19,7 +19,11 @@ dependencies = [
     "python-docx>=0.8.11",
     "beautifulsoup4>=4.12.0",
     "asyncpg>=0.31.0",
+    "akm-shared",
 ]
+
+[tool.uv.sources]
+akm-shared = { path = "../shared" }
 
 [project.optional-dependencies]
 dev = [
@@ -30,9 +34,9 @@ dev = [
 
 [project.scripts]
 # uv 管理的启动入口:
-#   uv run agentvault        -> Web 服务
-#   uv run agentvault --mcp  -> MCP Server stdio 模式
-agentvault = "app.__main__:main"
+#   uv run akm-hub        -> Web 服务
+#   uv run akm-hub --mcp  -> MCP Server stdio 模式
+akm-hub = "app.__main__:main"
 
 [build-system]
 requires = ["hatchling"]

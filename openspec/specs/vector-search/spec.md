@@ -63,7 +63,7 @@
 - **THEN** 系统确保 `vector` 扩展存在并创建向量表（默认表名 `document_vectors`，含 doc_id、标题、路径、node_id、分块序号、分块内容、embedding 列）及 doc_id 索引
 
 #### Scenario: 维度自动检测
-- **WHEN** 未显式配置 `AV_VECTOR_DIMENSIONS`（值为 0）
+- **WHEN** 未显式配置 `AKM_VECTOR_DIMENSIONS`（值为 0）
 - **THEN** 系统通过嵌入探测文本自动确定向量维度
 
 #### Scenario: 嵌入模型切换后重建
@@ -86,14 +86,14 @@
 - **THEN** 系统返回 `{"total_chunks": N}`；异常时返回 `{"total_chunks": 0, "error": ...}`
 
 ### Requirement: Embedding Provider Configuration
-系统 SHALL 支持通过 `AV_EMBEDDING_PROVIDER` 切换嵌入供应商：`ark`（默认，火山引擎 Ark API，模型 `doubao-embedding-vision-250615`，需 `AV_ARK_API_KEY`）或 `local`（本地 sentence-transformers）。
+系统 SHALL 支持通过 `AKM_EMBEDDING_PROVIDER` 切换嵌入供应商：`ark`（默认，火山引擎 Ark API，模型 `doubao-embedding-vision-250615`，需 `AKM_ARK_API_KEY`）或 `local`（本地 sentence-transformers）。
 
 #### Scenario: 默认 Ark 供应商
 - **WHEN** 未配置嵌入供应商
 - **THEN** 系统使用火山引擎 Ark API 生成嵌入
 
 #### Scenario: 本地嵌入切换
-- **WHEN** 配置 `AV_EMBEDDING_PROVIDER=local`
+- **WHEN** 配置 `AKM_EMBEDDING_PROVIDER=local`
 - **THEN** 系统使用本地 sentence-transformers 生成嵌入，无需外部 API
 
 ### Requirement: RAG Graceful Degradation

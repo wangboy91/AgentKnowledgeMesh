@@ -3,18 +3,18 @@
 # Development
 dev: install-backend install-frontend
 	@echo "Starting backend and frontend..."
-	@cd server && uv run python main.py &
+	@cd server && uv run akm-hub &
 	@cd web && npm run dev
 	@wait
 
 dev-backend: install-backend
-	cd server && uv run python main.py
+	cd server && uv run akm-hub
 
 dev-frontend: install-frontend
 	cd web && npm run dev
 
 dev-node: install-node
-	cd node && uv run python main.py
+	cd node && uv run akm-node
 
 # Install dependencies
 install-backend:

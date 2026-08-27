@@ -1,7 +1,7 @@
 """数据库连接管理.
 
 支持 SQLite 和 PostgreSQL 两种数据库。
-通过 AV_DB_TYPE 环境变量切换。
+通过 AKM_DB_TYPE 环境变量切换。
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

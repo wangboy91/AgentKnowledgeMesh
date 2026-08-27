@@ -8,15 +8,17 @@ WORKDIR /app
 
 # Install dependencies
 COPY node/pyproject.toml node/.python-version ./
+# akm-shared 作为 path 依赖（../shared），需在 uv sync 前拷贝到 /shared
+COPY shared/ /shared
 RUN uv sync --no-dev --no-install-project
 
 # Copy node code
 COPY node/ .
 
 # Environment variables
-ENV AV_HUB_URL=ws://hub:8000/ws
-ENV AV_HUB_API_URL=http://hub:8000/api
-ENV AV_KNOWLEDGE_ROOTS=/knowledge
+ENV AKM_HUB_URL=ws://hub:8000/ws
+ENV AKM_HUB_API_URL=http://hub:8000/api
+ENV AKM_KNOWLEDGE_ROOTS=/knowledge
 
 # Run
-CMD ["uv", "run", "python", "main.py"]
+CMD ["uv", "run", "python", "-m", "app"]

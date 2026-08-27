@@ -29,15 +29,15 @@ Hub + Node 分布式架构：节点通过 WebSocket 连接 Hub 注册与心跳�
 Node 客户端 SHALL 在未显式配置时自动生成本机身份：`node_id` 由主机名确定性生成（UUID5），`name` 默认为主机名，`platform` 为小写操作系统名（darwin/windows/linux）。
 
 #### Scenario: 同机重启身份不变
-- **WHEN** 同一台机器未配置 `AV_NODE_ID` 并重启 Node
+- **WHEN** 同一台机器未配置 `AKM_NODE_ID` 并重启 Node
 - **THEN** 生成的 `node_id` 与之前相同，Hub 识别为同一节点
 
 #### Scenario: 显式配置优先
-- **WHEN** 配置了 `AV_NODE_ID` 或 `AV_NODE_NAME`
+- **WHEN** 配置了 `AKM_NODE_ID` 或 `AKM_NODE_NAME`
 - **THEN** Node 使用配置值而非自动生成值
 
 ### Requirement: Heartbeat Keep-Alive
-Node SHALL 周期性向 Hub 发送 `heartbeat` 消息（默认间隔 30 秒，可通过 `AV_HEARTBEAT_INTERVAL` 配置）；Hub SHALL 以心跳刷新节点在线状态。
+Node SHALL 周期性向 Hub 发送 `heartbeat` 消息（默认间隔 30 秒，可通过 `AKM_HEARTBEAT_INTERVAL` 配置）；Hub SHALL 以心跳刷新节点在线状态。
 
 #### Scenario: 心跳刷新状态
 - **WHEN** Hub 收到节点的 `heartbeat` 消息
@@ -91,3 +91,52 @@ Hub SHALL 通过内存中的连接管理器跟踪在线节点；连接断开时�
 #### Scenario: 删除节点级联清理
 - **WHEN** 客户端调用 `DELETE /api/nodes/{node_id}`
 - **THEN** 系统删除该节点的全部文档索引，再删除节点记录；节点不存在时返回 404
+
+### Requirement: Node Document Upload
+Node SHALL 在扫描本地知识库后，将完整文档列表（含 path、title、hash、size、content）通过 HTTP 推送到 Hub 的节点文档入库端点，并携带注册时下发的节点令牌鉴权；触发时机为初始连接成功后与收到 `sync_request` 时。
+
+#### Scenario: 初始连接后上传
+- **WHEN** Node 成功注册到 Hub
+- **THEN** Node 扫描本地知识库并向 Hub 推送全部文档，记录 Hub 返回的同步统计
+
+#### Scenario: 收到同步请求后上传
+- **WHEN** Node 收到 `{"type": "sync_request"}` 消息
+- **THEN** Node 重新扫描本地知识库并推送文档列表到 Hub
+
+#### Scenario: 上传鉴权失败
+- **WHEN** Node 携带的令牌无效（Hub 返回 401）
+- **THEN** Node 记录错误日志，不中断 WebSocket 连接，等待下一次同步触发重试
+
+### Requirement: Hub Node Document Ingestion
+Hub SHALL 提供 `PUT /api/nodes/{node_id}/documents` 端点，接收节点推送的文档列表，按 `(node_id, path)` 作用域增量入库：SHA256 哈希不同的文档更新、列表中缺失的该节点文档删除，并返回同步统计。
+
+#### Scenario: 新增与更新文档
+- **WHEN** 节点推送的文档列表中包含 Hub 该节点名下不存在或哈希已变的路径
+- **THEN** Hub 插入或更新对应文档记录，统计中计入 created/updated 计数
+
+#### Scenario: 清理消失文档
+- **WHEN** 节点推送的文档列表缺少 Hub 该节点名下已存在的某路径
+- **THEN** Hub 删除该节点的该文档记录，统计中计入 deleted 计数
+
+#### Scenario: 作用域隔离
+- **WHEN** 节点推送文档列表
+- **THEN** Hub 仅增删改 `node_id` 等于路径中节点标识的文档，绝不修改 `local` 或其他节点的文档
+
+#### Scenario: 未鉴权或节点不存在
+- **WHEN** 请求未携带有效令牌，或 `node_id` 不存在
+- **THEN** Hub 返回 401（令牌无效）或 404（节点不存在）
+
+### Requirement: Node Token Issuance
+Hub SHALL 在节点注册时下发（首次生成并持久化、后续复用）节点令牌，并在 `register_ack` 消息中返回；节点文档入库端点 SHALL 强制校验该令牌。
+
+#### Scenario: 注册返回令牌
+- **WHEN** 节点发送合法 `register` 消息
+- **THEN** Hub 返回 `{"type": "register_ack", "node_id": ..., "status": "ok", "token": ...}`，令牌持久化于节点记录中
+
+#### Scenario: 令牌稳定复用
+- **WHEN** 同一 `node_id` 再次注册
+- **THEN** Hub 返回与该节点首次注册时一致的令牌，而非重新生成
+
+#### Scenario: 端点校验令牌
+- **WHEN** 请求访问 `PUT /api/nodes/{node_id}/documents`
+- **THEN** Hub 校验 `Authorization: Bearer <token>` 与节点记录中的令牌一致，不一致时返回 401

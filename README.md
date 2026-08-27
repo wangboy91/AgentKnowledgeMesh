@@ -97,7 +97,7 @@ open http://localhost:8000
 cd src/server
 uv sync
 cp .env.example .env   # 按需修改配置（见下方「配置说明」）
-uv run agentvault
+uv run akm-hub
 
 # 前端（另一个终端）
 cd src/web
@@ -116,7 +116,7 @@ uv sync
 cp .env.example .env   # 配置 Hub 地址和本地知识库目录
 
 # 启动
-uv run python main.py
+uv run akm-node
 ```
 
 ## 配置说明
@@ -137,9 +137,9 @@ cd src/server && cp .env.example .env
 **零配置即可启动**：默认使用 SQLite + 本地嵌入模型（首次运行会下载模型）。
 需要以下能力时再改配置：
 
-- **PostgreSQL 存储**：`AV_DB_TYPE=postgres` + 连接信息（向量表自动同库存放）
-- **中文语义搜索效果更好**：`AV_EMBEDDING_PROVIDER=ark` + 火山引擎 API Key
-- **指定知识库目录**：`AV_KNOWLEDGE_ROOTS=/path/to/docs`（多个用逗号分隔）
+- **PostgreSQL 存储**：`AKM_DB_TYPE=postgres` + 连接信息（向量表自动同库存放）
+- **中文语义搜索效果更好**：`AKM_EMBEDDING_PROVIDER=ark` + 火山引擎 API Key
+- **指定知识库目录**：`AKM_KNOWLEDGE_ROOTS=/path/to/docs`（多个用逗号分隔）
 
 Or use Makefile:
 
@@ -162,7 +162,7 @@ AgentKnowledgeMesh 支持 MCP (Model Context Protocol)，让 AI 工具可以直�
   "mcpServers": {
     "agentknowledge": {
       "command": "uv",
-      "args": ["run", "agentvault", "--mcp"],
+      "args": ["run", "akm-hub", "--mcp"],
       "cwd": "src/server"
     }
   }
@@ -226,6 +226,7 @@ npx @modelcontextprotocol/inspector http://localhost:8000/api/mcp/sse
 | GET | `/api/nodes` | Node list |
 | GET | `/api/nodes/:id` | Node detail |
 | GET | `/api/nodes/:id/documents` | Node documents |
+| PUT | `/api/nodes/:id/documents` | Upload node documents (Bearer token) |
 | POST | `/api/nodes/:id/sync` | Request sync |
 | DELETE | `/api/nodes/:id` | Delete node |
 
@@ -268,7 +269,7 @@ Supported formats: PDF, DOCX, HTML
 AgentKnowledgeMesh/
 ├── src/
 │   ├── server/            # Hub backend (FastAPI)
-│   │   ├── app/           # 应用主包（uv run agentvault 启动）
+│   │   ├── app/           # 应用主包（uv run akm-hub 启动）
 │   │   │   ├── main.py    # FastAPI 入口 + lifespan
 │   │   │   ├── config.py  # 配置（路径锚定项目根，CWD 无关）
 │   │   │   ├── db.py      # 数据库连接
@@ -290,11 +291,16 @@ AgentKnowledgeMesh/
 │   │   ├── tests/         # 测试
 │   │   ├── .env           # 环境变量（不入库）
 │   │   └── pyproject.toml
+│   ├── shared/            # Shared scanner (akm-shared)
+│   │   └── akm_shared/
+│   │       └── scanner.py
 │   ├── node/              # Node client
-│   │   ├── main.py
-│   │   ├── config.py
-│   │   ├── scanner.py
-│   │   └── hub_client.py
+│   │   └── app/           # 应用主包（uv run akm-node 启动）
+│   │       ├── __main__.py
+│   │       ├── config.py
+│   │       ├── transport.py
+│   │       ├── sync.py
+│   │       └── runner.py
 │   └── web/               # React frontend
 │       └── src/
 │           ├── components/
@@ -316,35 +322,35 @@ AgentKnowledgeMesh/
 
 ### Hub Configuration
 
-Environment variables (prefix `AV_`):
+Environment variables (prefix `AKM_`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AV_HOST` | `0.0.0.0` | Server host |
-| `AV_PORT` | `8000` | Server port |
-| `AV_DB_TYPE` | `sqlite` | Database type: `sqlite` or `postgres` |
-| `AV_DB_PATH` | `data/agentvault.db` | SQLite database path |
-| `AV_KNOWLEDGE_ROOTS` | `~/Knowledge` | Knowledge directories (comma-separated) |
-| `AV_DEBUG` | `false` | Debug mode |
+| `AKM_HOST` | `0.0.0.0` | Server host |
+| `AKM_PORT` | `8000` | Server port |
+| `AKM_DB_TYPE` | `sqlite` | Database type: `sqlite` or `postgres` |
+| `AKM_DB_PATH` | `data/agentvault.db` | SQLite database path |
+| `AKM_KNOWLEDGE_ROOTS` | `~/Knowledge` | Knowledge directories (comma-separated) |
+| `AKM_DEBUG` | `false` | Debug mode |
 
 ### Node Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AV_HUB_URL` | `ws://localhost:8000/ws` | Hub WebSocket URL |
-| `AV_HUB_API_URL` | `http://localhost:8000/api` | Hub API URL |
-| `AV_NODE_NAME` | Auto (hostname) | Node display name |
-| `AV_KNOWLEDGE_ROOTS` | `~/Knowledge` | Knowledge directories |
-| `AV_HEARTBEAT_INTERVAL` | `30` | Heartbeat interval (seconds) |
+| `AKM_HUB_URL` | `ws://localhost:8000/ws` | Hub WebSocket URL |
+| `AKM_HUB_API_URL` | `http://localhost:8000/api` | Hub API URL |
+| `AKM_NODE_NAME` | Auto (hostname) | Node display name |
+| `AKM_KNOWLEDGE_ROOTS` | `~/Knowledge` | Knowledge directories |
+| `AKM_HEARTBEAT_INTERVAL` | `30` | Heartbeat interval (seconds) |
 
 ### Multiple Knowledge Directories
 
 ```bash
 # 单目录
-AV_KNOWLEDGE_ROOTS=/Users/me/obsidian-doc
+AKM_KNOWLEDGE_ROOTS=/Users/me/obsidian-doc
 
 # 多目录（逗号分隔）
-AV_KNOWLEDGE_ROOTS=/Users/me/obsidian-doc,/Users/me/projects/docs
+AKM_KNOWLEDGE_ROOTS=/Users/me/obsidian-doc,/Users/me/projects/docs
 ```
 
 ### Database Switching
@@ -352,16 +358,16 @@ AV_KNOWLEDGE_ROOTS=/Users/me/obsidian-doc,/Users/me/projects/docs
 **SQLite (default)** - zero config:
 
 ```bash
-AV_DB_TYPE=sqlite AV_DB_PATH=data/agentvault.db
+AKM_DB_TYPE=sqlite AKM_DB_PATH=data/agentvault.db
 ```
 
 **PostgreSQL** - for production:
 
 ```bash
 cd src/server && uv sync --extra postgres
-export AV_DB_TYPE=postgres
-export AV_DB_HOST=localhost
-export AV_DB_PASSWORD=your_password
+export AKM_DB_TYPE=postgres
+export AKM_DB_HOST=localhost
+export AKM_DB_PASSWORD=your_password
 ```
 
 Docker with PostgreSQL:
@@ -389,7 +395,7 @@ docker compose -f docker-compose.pg.yml up -d
 docker compose -f docker-compose.node.yml up -d
 
 # 连接到远程 Hub
-AV_HUB_URL=ws://hub-ip:8000/ws docker compose -f docker-compose.node.yml up -d
+AKM_HUB_URL=ws://hub-ip:8000/ws docker compose -f docker-compose.node.yml up -d
 ```
 
 ## Roadmap

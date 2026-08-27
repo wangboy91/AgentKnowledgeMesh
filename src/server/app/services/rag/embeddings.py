@@ -1,6 +1,6 @@
 """向量嵌入服务.
 
-支持多供应商切换（通过 AV_EMBEDDING_PROVIDER 环境变量）：
+支持多供应商切换（通过 AKM_EMBEDDING_PROVIDER 环境变量）：
 1. ark: 火山引擎 Ark API（doubao-embedding 系列模型）
 2. local: 本地 sentence-transformers 模型
 
@@ -46,7 +46,7 @@ def _embed_ark(text: str) -> list[float]:
     因此每个文本需要单独一次请求。
     """
     if not settings.ark_api_key:
-        raise ValueError("AV_ARK_API_KEY 未配置")
+        raise ValueError("AKM_ARK_API_KEY 未配置")
 
     resp = httpx.post(
         f"{settings.ark_base_url}/embeddings/multimodal",

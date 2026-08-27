@@ -1,6 +1,6 @@
 """RAG 子域：向量嵌入与向量存储.
 
-供应商可通过 AV_EMBEDDING_PROVIDER 切换（ark / local），
+供应商可通过 AKM_EMBEDDING_PROVIDER 切换（ark / local），
 向量存储使用 PostgreSQL + pgvector。
 """
 

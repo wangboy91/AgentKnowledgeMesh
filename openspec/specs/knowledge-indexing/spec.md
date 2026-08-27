@@ -18,7 +18,7 @@
 - **THEN** 该文件不进入扫描结果
 
 #### Scenario: 跳过超大文件
-- **WHEN** 文件大小超过 `AV_MAX_FILE_SIZE_MB`（默认 10MB）
+- **WHEN** 文件大小超过 `AKM_MAX_FILE_SIZE_MB`（默认 10MB）
 - **THEN** 该文件不进入扫描结果
 
 #### Scenario: 跳过不可读文件
@@ -26,14 +26,14 @@
 - **THEN** 该文件被静默跳过，不中断整体扫描
 
 ### Requirement: Multiple Knowledge Roots
-系统 SHALL 支持通过 `AV_KNOWLEDGE_ROOTS` 配置多个知识库目录（逗号分隔），未配置时回退到默认目录。
+系统 SHALL 支持通过 `AKM_KNOWLEDGE_ROOTS` 配置多个知识库目录（逗号分隔），未配置时回退到默认目录。
 
 #### Scenario: 多目录扫描加来源前缀
 - **WHEN** 配置了多个知识库目录
 - **THEN** 每个文档的相对路径以所在目录名为前缀（如 `obsidian-doc/projects/ai.md`），避免不同目录间路径冲突
 
 #### Scenario: 默认知识库目录
-- **WHEN** 未配置 `AV_KNOWLEDGE_ROOTS`
+- **WHEN** 未配置 `AKM_KNOWLEDGE_ROOTS`
 - **THEN** 系统使用 `~/Knowledge` 作为知识库目录（Hub 端不存在时自动创建）
 
 #### Scenario: 忽略不存在的目录
@@ -74,14 +74,14 @@
 - **THEN** 系统执行扫描与同步，返回 `{"message": "Scan completed", "created": N, "updated": N, "deleted": N}`
 
 ### Requirement: Switchable Database Storage
-系统 SHALL 支持通过 `AV_DB_TYPE` 在 SQLite（默认）与 PostgreSQL 之间切换文档索引存储，所有配置项以 `AV_` 为环境变量前缀。
+系统 SHALL 支持通过 `AKM_DB_TYPE` 在 SQLite（默认）与 PostgreSQL 之间切换文档索引存储，所有配置项以 `AKM_` 为环境变量前缀。
 
 #### Scenario: SQLite 默认存储
 - **WHEN** 未配置数据库类型
 - **THEN** 系统使用 SQLite，数据库文件默认位于项目 `data/` 目录下，目录不存在时自动创建
 
 #### Scenario: PostgreSQL 切换
-- **WHEN** 配置 `AV_DB_TYPE=postgres` 及连接参数（`AV_DB_HOST`/`AV_DB_PORT`/`AV_DB_NAME`/`AV_DB_USER`/`AV_DB_PASSWORD`）
+- **WHEN** 配置 `AKM_DB_TYPE=postgres` 及连接参数（`AKM_DB_HOST`/`AKM_DB_PORT`/`AKM_DB_NAME`/`AKM_DB_USER`/`AKM_DB_PASSWORD`）
 - **THEN** 系统使用 asyncpg 连接 PostgreSQL 存储索引
 
 ### Requirement: Document Data Model

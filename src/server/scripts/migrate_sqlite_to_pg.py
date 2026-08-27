@@ -33,7 +33,7 @@ async def main():
 
     # 源：SQLite
     src_engine = create_async_engine(f"sqlite+aiosqlite:///{SQLITE_PATH}")
-    # 目标：PostgreSQL（读 AV_DB_* 配置）
+    # 目标：PostgreSQL（读 AKM_DB_* 配置）
     dst_engine = create_async_engine(settings.db_url)
 
     # 1. 在 PG 创建表

@@ -2,9 +2,9 @@
 # Usage: docker compose -f docker-compose.pg.yml up -d
 
 services:
-  agentvault:
+  akm-hub:
     build: .
-    container_name: agentvault
+    container_name: akm-hub
     ports:
       - "8000:8000"
     volumes:
@@ -13,18 +13,18 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      - AV_KNOWLEDGE_ROOTS=/knowledge
-      - AV_DB_TYPE=postgres
-      - AV_DB_HOST=postgres
-      - AV_DB_PORT=5432
-      - AV_DB_NAME=agentvault
-      - AV_DB_USER=postgres
-      - AV_DB_PASSWORD=${POSTGRES_PASSWORD:-agentvault}
+      - AKM_KNOWLEDGE_ROOTS=/knowledge
+      - AKM_DB_TYPE=postgres
+      - AKM_DB_HOST=postgres
+      - AKM_DB_PORT=5432
+      - AKM_DB_NAME=agentvault
+      - AKM_DB_USER=postgres
+      - AKM_DB_PASSWORD=${POSTGRES_PASSWORD:-agentvault}
     restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
-    container_name: agentvault-postgres
+    container_name: akm-postgres
     volumes:
       - postgres-data:/var/lib/postgresql/data
     environment:

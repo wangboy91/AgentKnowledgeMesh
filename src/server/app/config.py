@@ -1,6 +1,8 @@
 """AgentKnowledgeMesh 配置管理."""
 
 from pathlib import Path
+
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 # 项目根目录（src/server，即 app 包的父目录）
@@ -12,60 +14,116 @@ class Settings(BaseSettings):
     """应用配置，支持环境变量覆盖."""
 
     # 服务配置
-    app_name: str = "AgentKnowledgeMesh"
-    app_version: str = "0.1.0"
-    host: str = "0.0.0.0"
-    port: int = 8000
-    debug: bool = False
+    app_name: str = Field(
+        "AgentKnowledgeMesh",
+    )
+    app_version: str = Field(
+        "0.1.0",
+    )
+    host: str = Field(
+        "0.0.0.0",
+    )
+    port: int = Field(
+        8000,
+    )
+    debug: bool = Field(
+        False,
+    )
 
     # 数据库配置
     # 类型: sqlite / postgres
-    db_type: str = "sqlite"
+    db_type: str = Field(
+        "sqlite",
+    )
 
-    # SQLite 配置（锚定到项目根目录，Docker 中通过 AV_DB_PATH 覆盖）
-    db_path: str = str(BASE_DIR / "data" / "agentvault.db")
+    # SQLite 配置（锚定到项目根目录，Docker 中通过 AKM_DB_PATH 覆盖）
+    db_path: str = Field(
+        str(BASE_DIR / "data" / "agentvault.db"),
+    )
 
     # PostgreSQL 配置
-    db_host: str = "localhost"
-    db_port: int = 5432
-    db_name: str = "agentvault"
-    db_user: str = "postgres"
-    db_password: str = ""
+    db_host: str = Field(
+        "localhost",
+    )
+    db_port: int = Field(
+        5432,
+    )
+    db_name: str = Field(
+        "agentvault",
+    )
+    db_user: str = Field(
+        "postgres",
+    )
+    db_password: str = Field(
+        "",
+    )
 
     # 知识库根目录，支持多个目录用逗号分隔
     # 例如: "/Users/me/obsidian-doc,/Users/me/projects/docs"
-    knowledge_roots: str = ""
+    knowledge_roots: str = Field(
+        "",
+    )
 
     # 扫描配置
-    scan_extensions: list[str] = [".md"]
-    max_file_size_mb: int = 10
+    scan_extensions: list[str] = Field(
+        [".md"],
+    )
+    max_file_size_mb: int = Field(
+        10,
+    )
 
     # 向量嵌入配置（支持多供应商切换）
     # 供应商: ark (火山引擎 Ark API) / local (本地 sentence-transformers)
-    embedding_provider: str = "ark"
-    embedding_model: str = "doubao-embedding-vision-250615"
+    embedding_provider: str = Field(
+        "ark",
+    )
+    embedding_model: str = Field(
+        "doubao-embedding-vision-250615",
+    )
 
     # 火山引擎 Ark API 配置
-    ark_api_key: str = ""
-    ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+    ark_api_key: str = Field(
+        "",
+    )
+    ark_base_url: str = Field(
+        "https://ark.cn-beijing.volces.com/api/v3",
+    )
 
     # 分块配置
-    chunk_size: int = 500
-    chunk_overlap: int = 50
+    chunk_size: int = Field(
+        500,
+    )
+    chunk_overlap: int = Field(
+        50,
+    )
 
     # 向量数据库配置（PostgreSQL + pgvector）
     # 各项留空时 fallback 到上面的主库配置（db_host 等），实现"一个数据库"部署
-    vector_db_host: str = ""
-    vector_db_port: int = 0
-    vector_db_name: str = ""
-    vector_db_user: str = ""
-    vector_db_password: str = ""
-    vector_db_table: str = "document_vectors"
+    vector_db_host: str = Field(
+        "",
+    )
+    vector_db_port: int = Field(
+        0,
+    )
+    vector_db_name: str = Field(
+        "",
+    )
+    vector_db_user: str = Field(
+        "",
+    )
+    vector_db_password: str = Field(
+        "",
+    )
+    vector_db_table: str = Field(
+        "document_vectors",
+    )
     # 向量维度: 0 表示自动检测（首次嵌入时确定）
-    vector_dimensions: int = 0
+    vector_dimensions: int = Field(
+        0,
+    )
 
     model_config = {
-        "env_prefix": "AV_",
+        "env_prefix": "AKM_",
         "env_file": str(BASE_DIR / ".env"),
     }
 

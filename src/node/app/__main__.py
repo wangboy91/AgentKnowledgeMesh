@@ -1,14 +1,15 @@
 """AgentKnowledgeMesh Node 客户端入口.
 
 运行方式:
-    python main.py
+    uv run akm-node
     或
-    AV_HUB_URL=ws://hub:8000/ws AV_KNOWLEDGE_ROOTS=~/Knowledge python main.py
+    python -m app
 """
 
 import asyncio
-from config import settings
-from hub_client import HubClient
+
+from app.config import settings
+from app.runner import HubClient
 
 
 def main():

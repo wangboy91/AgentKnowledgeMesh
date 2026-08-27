@@ -15,9 +15,9 @@ The system uses a Hub + Node architecture where:
 ```
 AgentKnowledgeMesh/
 ├── server/                    # Hub backend (FastAPI + SQLAlchemy)
-│   ├── app/                   # 应用主包（uv run agentvault 启动）
+│   ├── app/                   # 应用主包（uv run akm-hub 启动）
 │   │   ├── main.py            # FastAPI entry point, WebSocket endpoint
-│   │   ├── __main__.py        # uv run agentvault [--mcp] 入口
+│   │   ├── __main__.py        # uv run akm-hub [--mcp] 入口
 │   │   ├── config.py          # Settings with pydantic-settings (paths anchored to BASE_DIR)
 │   │   ├── db.py              # Async SQLAlchemy engine/session
 │   │   ├── models/
@@ -37,10 +37,12 @@ AgentKnowledgeMesh/
 │   └── tests/
 │
 ├── node/                      # Node client (lightweight)
-│   ├── main.py                # Entry point
-│   ├── config.py              # Node settings (hub_url, knowledge_roots)
-│   ├── scanner.py             # Local Markdown scanner
-│   └── hub_client.py          # WebSocket client (register, heartbeat, doc request)
+│   └── app/                   # 应用主包（uv run akm-node 启动）
+│       ├── __main__.py        # Entry point
+│       ├── config.py          # Node settings (hub_url, knowledge_roots)
+│       ├── transport.py       # WebSocket client (register, heartbeat, doc request)
+│       ├── sync.py            # Document sync (scan + send content)
+│       └── runner.py          # Main loop + heartbeat + reconnect
 │
 ├── web/                       # React frontend (Vite + TypeScript)
 │   └── src/
@@ -58,6 +60,9 @@ AgentKnowledgeMesh/
 │       ├── api/client.ts      # Typed API client
 │       └── ThemeContext.tsx    # Dark/Light theme provider
 │
+├── shared/                    # Shared scanner (akm-shared, path dependency)
+│   └── akm_shared/
+│       └── scanner.py         # Unified Markdown scanner used by server + node
 ├── Dockerfile                 # Hub image (multi-stage: node build + python)
 ├── Dockerfile.node            # Node image
 ├── docker-compose.yml         # Hub with SQLite
@@ -72,7 +77,7 @@ AgentKnowledgeMesh/
 | Layer | Technology | Notes |
 |-------|-----------|-------|
 | Backend | Python 3.11 + FastAPI | Async throughout |
-| Database | SQLite (default) / PostgreSQL | Switch via `AV_DB_TYPE` |
+| Database | SQLite (default) / PostgreSQL | Switch via `AKM_DB_TYPE` |
 | ORM | SQLAlchemy 2.0 (async) | `aiosqlite` or `asyncpg` |
 | Frontend | React 18 + Vite + TypeScript | SPA, dark/light theme |
 | Markdown | react-markdown + remark-gfm | GitHub-flavored rendering |
@@ -88,11 +93,11 @@ All Python commands use `uv` for package management.
 ```bash
 cd server
 uv sync                          # Install dependencies
-uv run agentvault            # Start Hub on :8000
+uv run akm-hub            # Start Hub on :8000
 
 # With PostgreSQL
 uv sync --extra postgres
-AV_DB_TYPE=postgres uv run agentvault
+AKM_DB_TYPE=postgres uv run akm-hub
 ```
 
 ### Frontend (web)
@@ -109,7 +114,7 @@ npm run build                    # Build to web/dist/
 ```bash
 cd node
 uv sync
-AV_HUB_URL=ws://localhost:8000/ws AV_KNOWLEDGE_ROOTS=~/Knowledge uv run agentvault
+AKM_HUB_URL=ws://localhost:8000/ws AKM_KNOWLEDGE_ROOTS=~/Knowledge uv run akm-node
 ```
 
 ### Makefile Shortcuts
@@ -130,27 +135,27 @@ make clean               # Remove caches, venv, db
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AV_HOST` | `0.0.0.0` | Server host |
-| `AV_PORT` | `8000` | Server port |
-| `AV_DB_TYPE` | `sqlite` | `sqlite` or `postgres` |
-| `AV_DB_PATH` | `data/agentvault.db` | SQLite path |
-| `AV_DB_HOST` | `localhost` | PostgreSQL host |
-| `AV_DB_PORT` | `5432` | PostgreSQL port |
-| `AV_DB_NAME` | `agentvault` | PostgreSQL database |
-| `AV_DB_USER` | `postgres` | PostgreSQL user |
-| `AV_DB_PASSWORD` | | PostgreSQL password |
-| `AV_KNOWLEDGE_ROOTS` | `~/Knowledge` | Comma-separated directories |
-| `AV_DEBUG` | `false` | Debug mode |
+| `AKM_HOST` | `0.0.0.0` | Server host |
+| `AKM_PORT` | `8000` | Server port |
+| `AKM_DB_TYPE` | `sqlite` | `sqlite` or `postgres` |
+| `AKM_DB_PATH` | `data/agentvault.db` | SQLite path |
+| `AKM_DB_HOST` | `localhost` | PostgreSQL host |
+| `AKM_DB_PORT` | `5432` | PostgreSQL port |
+| `AKM_DB_NAME` | `agentvault` | PostgreSQL database |
+| `AKM_DB_USER` | `postgres` | PostgreSQL user |
+| `AKM_DB_PASSWORD` | | PostgreSQL password |
+| `AKM_KNOWLEDGE_ROOTS` | `~/Knowledge` | Comma-separated directories |
+| `AKM_DEBUG` | `false` | Debug mode |
 
 ### Node Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AV_HUB_URL` | `ws://localhost:8000/ws` | Hub WebSocket URL |
-| `AV_HUB_API_URL` | `http://localhost:8000/api` | Hub API URL |
-| `AV_NODE_NAME` | hostname | Node display name |
-| `AV_KNOWLEDGE_ROOTS` | `~/Knowledge` | Comma-separated directories |
-| `AV_HEARTBEAT_INTERVAL` | `30` | Seconds between heartbeats |
+| `AKM_HUB_URL` | `ws://localhost:8000/ws` | Hub WebSocket URL |
+| `AKM_HUB_API_URL` | `http://localhost:8000/api` | Hub API URL |
+| `AKM_NODE_NAME` | hostname | Node display name |
+| `AKM_KNOWLEDGE_ROOTS` | `~/Knowledge` | Comma-separated directories |
+| `AKM_HEARTBEAT_INTERVAL` | `30` | Seconds between heartbeats |
 
 ## WebSocket Protocol
 

@@ -125,7 +125,7 @@ async def handle_register(websocket: WebSocket, message: dict) -> dict:
     # 注册到连接管理器
     await manager.connect(websocket, node_id)
 
-    return {"type": "register_ack", "node_id": node_id, "status": "ok"}
+    return {"type": "register_ack", "node_id": node_id, "status": "ok", "token": node.token}
 
 
 async def handle_heartbeat(message: dict) -> dict:
