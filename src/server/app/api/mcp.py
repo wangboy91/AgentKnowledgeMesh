@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 from mcp.server.sse import SseServerTransport
 
-from services.mcp_server import server
+from app.services.mcp_server import server
 
 router = APIRouter()
 

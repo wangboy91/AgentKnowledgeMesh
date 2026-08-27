@@ -18,8 +18,8 @@ import logging
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.document import Document
-from services.scanner import ScannedDocument
+from app.models.document import Document
+from app.services.scanner import ScannedDocument
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ async def sync_documents(
 
                 # 更新向量存储
                 try:
-                    from services.vector_store import add_document
+                    from app.services.rag.vector_store import add_document
                     add_document(
                         doc_id=old_doc.id,
                         title=old_doc.title,
@@ -87,7 +87,7 @@ async def sync_documents(
         for path in paths_to_delete:
             doc = existing[path]
             try:
-                from services.vector_store import delete_document
+                from app.services.rag.vector_store import delete_document
                 delete_document(doc.id)
             except Exception as e:
                 logger.warning(f"Failed to delete vector for {path}: {e}")
@@ -102,7 +102,7 @@ async def sync_documents(
     # 为新文档添加向量（需要先 commit 获取 ID）
     if stats["created"] > 0:
         try:
-            from services.vector_store import add_document
+            from app.services.rag.vector_store import add_document
             # 重新查询新添加的文档
             result = await session.execute(select(Document))
             all_docs = {doc.path: doc for doc in result.scalars().all()}

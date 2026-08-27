@@ -12,7 +12,7 @@ AgentKnowledgeMesh 提供 MCP (Model Context Protocol) Server，让 AI 工具可
 
 ```bash
 cd src/server
-uv run python main.py
+uv run agentvault
 ```
 
 MCP 端点：
@@ -23,7 +23,7 @@ MCP 端点：
 
 ```bash
 cd src/server
-uv run python main.py --mcp
+uv run agentvault --mcp
 ```
 
 ## 配置 Claude Code
@@ -47,7 +47,7 @@ uv run python main.py --mcp
   "mcpServers": {
     "agentknowledge": {
       "command": "uv",
-      "args": ["run", "python", "main.py", "--mcp"],
+      "args": ["run", "agentvault", "--mcp"],
       "cwd": "src/server"
     }
   }

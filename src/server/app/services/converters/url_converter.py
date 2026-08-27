@@ -33,7 +33,7 @@ def convert_url(url: str) -> dict:
         html_content = response.text
 
         # 使用 HTML 转换器
-        from services.converters.html_converter import convert_html_string
+        from app.services.converters.html_converter import convert_html_string
         result = convert_html_string(html_content, source=url)
 
         # 确保有标题

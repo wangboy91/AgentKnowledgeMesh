@@ -1,46 +1,120 @@
 """向量嵌入服务.
 
-支持两种模式：
-1. 本地模型：使用 sentence-transformers
-2. API 模式：使用 OpenAI 兼容的 Embedding API
+支持多供应商切换（通过 AV_EMBEDDING_PROVIDER 环境变量）：
+1. ark: 火山引擎 Ark API（doubao-embedding 系列模型）
+2. local: 本地 sentence-transformers 模型
 
 设计要点：
-- 模型懒加载，首次使用时才加载
-- 支持批量嵌入
-- 缓存已嵌入的文档（通过 hash 检测变更）
+- 供应商抽象，后期可扩展其他供应商（OpenAI / 智谱 / 阿里等）
+- 模型懒加载，首次使用时才初始化
+- 向量维度自动检测（首次嵌入时确定）
 """
 
 import logging
-from functools import lru_cache
 
-import numpy as np
+import httpx
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# 全局模型实例（懒加载）
-_model = None
+# 缓存的向量维度（首次嵌入后确定）
+_dimension: int | None = None
 
 
-def get_model():
-    """获取或加载模型."""
-    global _model
-    if _model is None:
-        try:
-            from sentence_transformers import SentenceTransformer
-            from config import settings
+def get_dimension() -> int:
+    """获取当前模型的向量维度.
 
-            model_name = settings.embedding_model
-            logger.info(f"Loading embedding model: {model_name}")
-            _model = SentenceTransformer(model_name)
-            logger.info("Embedding model loaded successfully")
-        except Exception as e:
-            logger.error(f"Failed to load embedding model: {e}")
-            raise
-    return _model
+    首次调用会嵌入一个探测文本以确定维度。
+    """
+    global _dimension
+    if _dimension is None:
+        probe = embed_text("dimension probe")
+        _dimension = len(probe)
+        logger.info(f"Detected embedding dimension: {_dimension}")
+    return _dimension
+
+
+# ========== 供应商实现 ==========
+
+
+def _embed_ark(text: str) -> list[float]:
+    """调用火山引擎 Ark multimodal embeddings API.
+
+    注意：该接口一次调用只返回一个 embedding，
+    即使 input 数组包含多项也只返回整体一个向量。
+    因此每个文本需要单独一次请求。
+    """
+    if not settings.ark_api_key:
+        raise ValueError("AV_ARK_API_KEY 未配置")
+
+    resp = httpx.post(
+        f"{settings.ark_base_url}/embeddings/multimodal",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {settings.ark_api_key}",
+        },
+        json={
+            "model": settings.embedding_model,
+            "input": [{"type": "text", "text": text}],
+        },
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    # 单输入时 data 是对象: {embedding: [...]}
+    # 多输入时 data 是数组: [{embedding: [...]}]
+    d = data["data"]
+    if isinstance(d, list):
+        return d[0]["embedding"]
+    return d["embedding"]
+
+
+# 本地模型实例（懒加载）
+_local_model = None
+
+
+def _get_local_model():
+    """获取或加载本地 sentence-transformers 模型."""
+    global _local_model
+    if _local_model is None:
+        from sentence_transformers import SentenceTransformer
+
+        logger.info(f"Loading local embedding model: {settings.embedding_model}")
+        _local_model = SentenceTransformer(settings.embedding_model)
+        logger.info("Embedding model loaded successfully")
+    return _local_model
+
+
+def _embed_local(text: str) -> list[float]:
+    """使用本地模型嵌入单个文本."""
+    model = _get_local_model()
+    embedding = model.encode(text, normalize_embeddings=True)
+    return embedding.tolist()
+
+
+# ========== 统一入口 ==========
+
+_PROVIDERS = {
+    "ark": _embed_ark,
+    "local": _embed_local,
+}
+
+
+def _get_provider():
+    """获取当前供应商的嵌入函数."""
+    provider = settings.embedding_provider.lower()
+    if provider not in _PROVIDERS:
+        raise ValueError(
+            f"未知的 embedding provider: {provider}，"
+            f"可选值: {', '.join(_PROVIDERS.keys())}"
+        )
+    return _PROVIDERS[provider]
 
 
 def embed_text(text: str) -> list[float]:
-    """将文本转换为向量.
+    """将文本转换为向量（统一入口，按配置分发到供应商）.
 
     Args:
         text: 要嵌入的文本
@@ -48,9 +122,8 @@ def embed_text(text: str) -> list[float]:
     Returns:
         向量列表
     """
-    model = get_model()
-    embedding = model.encode(text, normalize_embeddings=True)
-    return embedding.tolist()
+    embed = _get_provider()
+    return embed(text)
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
@@ -60,14 +133,15 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         texts: 文本列表
 
     Returns:
-        向量列表
+        向量列表（与输入顺序一一对应）
     """
     if not texts:
         return []
 
-    model = get_model()
-    embeddings = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
-    return embeddings.tolist()
+    embeddings = []
+    for text in texts:
+        embeddings.append(embed_text(text))
+    return embeddings
 
 
 def chunk_text(text: str, chunk_size: int = 500, chunk_overlap: int = 50) -> list[str]:

@@ -16,7 +16,7 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
-from config import settings
+from app.config import settings
 
 
 @dataclass

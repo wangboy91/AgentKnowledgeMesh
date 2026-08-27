@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
-import { api, SystemStats, ScanStats } from '../api/client'
+import { api, SystemStats, ScanStats, VectorStats, RagIndexResponse } from '../api/client'
 
 export default function Dashboard() {
   const [stats, setStats] = useState<SystemStats | null>(null)
+  const [vectorStats, setVectorStats] = useState<VectorStats | null>(null)
   const [scanning, setScanning] = useState(false)
+  const [indexing, setIndexing] = useState(false)
   const [lastScan, setLastScan] = useState<ScanStats | null>(null)
+  const [lastIndex, setLastIndex] = useState<RagIndexResponse | null>(null)
 
   useEffect(() => {
     loadStats()
@@ -12,8 +15,12 @@ export default function Dashboard() {
 
   async function loadStats() {
     try {
-      const data = await api.getStats()
+      const [data, vStats] = await Promise.all([
+        api.getStats(),
+        api.getVectorStats().catch(() => null),
+      ])
       setStats(data)
+      setVectorStats(vStats)
     } catch (err) {
       console.error('Failed to load stats:', err)
     }
@@ -29,6 +36,19 @@ export default function Dashboard() {
       console.error('Scan failed:', err)
     } finally {
       setScanning(false)
+    }
+  }
+
+  async function handleIndex() {
+    setIndexing(true)
+    try {
+      const result = await api.ragIndex()
+      setLastIndex(result)
+      await loadStats()
+    } catch (err) {
+      console.error('Index failed:', err)
+    } finally {
+      setIndexing(false)
     }
   }
 
@@ -51,11 +71,23 @@ export default function Dashboard() {
           <h3>{stats ? formatSize(stats.total_size_bytes) : '-'}</h3>
           <p>Total Size</p>
         </div>
+        <div className="stat-card">
+          <h3>{vectorStats?.total_chunks ?? '-'}</h3>
+          <p>Vector Chunks</p>
+        </div>
       </div>
 
-      <div style={{ marginBottom: '24px' }}>
+      <div style={{ marginBottom: '24px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
         <button className="btn btn-primary" onClick={handleScan} disabled={scanning}>
           {scanning ? 'Scanning...' : '🔍 Scan Knowledge Base'}
+        </button>
+        <button
+          className="btn btn-primary"
+          onClick={handleIndex}
+          disabled={indexing}
+          style={{ background: 'var(--accent)' }}
+        >
+          {indexing ? 'Indexing...' : '🧠 Build RAG Index'}
         </button>
       </div>
 
@@ -68,13 +100,22 @@ export default function Dashboard() {
         </div>
       )}
 
+      {lastIndex && (
+        <div className="stat-card" style={{ maxWidth: '400px', marginTop: '12px' }}>
+          <h3 style={{ fontSize: '16px', marginBottom: '8px' }}>Last RAG Index Result</h3>
+          <p>📄 {lastIndex.message}</p>
+          <p>🧩 Total chunks: {lastIndex.total_chunks}</p>
+        </div>
+      )}
+
       <div style={{ marginTop: '32px', color: 'var(--text-secondary)' }}>
         <h3 style={{ marginBottom: '12px', color: 'var(--text-primary)' }}>Quick Start</h3>
         <ol style={{ paddingLeft: '20px', lineHeight: 2 }}>
           <li>Place your Markdown files in the knowledge directory</li>
           <li>Click "Scan Knowledge Base" to index them</li>
+          <li>Click "Build RAG Index" to enable semantic search</li>
           <li>Browse files in the Knowledge tab</li>
-          <li>Use the search bar to find content</li>
+          <li>Use 🧠 semantic search to find content by meaning</li>
         </ol>
       </div>
     </div>

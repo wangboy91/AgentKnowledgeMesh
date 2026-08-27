@@ -7,7 +7,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-from config import settings
+from app.config import settings
 
 
 def create_engine():
@@ -40,7 +40,7 @@ class Base(DeclarativeBase):
 async def init_db() -> None:
     """初始化数据库，创建所有表."""
     async with engine.begin() as conn:
-        from models.document import Document  # noqa: F401
+        from app.models.document import Document  # noqa: F401
         await conn.run_sync(Base.metadata.create_all)
 
 

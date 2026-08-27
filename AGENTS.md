@@ -15,21 +15,26 @@ The system uses a Hub + Node architecture where:
 ```
 AgentKnowledgeMesh/
 ├── server/                    # Hub backend (FastAPI + SQLAlchemy)
-│   ├── main.py                # FastAPI entry point, WebSocket endpoint
-│   ├── config.py              # Settings with pydantic-settings
-│   ├── db.py                  # Async SQLAlchemy engine/session
-│   ├── models/
-│   │   ├── document.py        # Document model (id, node_id, path, title, hash, content)
-│   │   └── node.py            # Node model (id, name, platform, status, token)
-│   ├── services/
-│   │   ├── scanner.py         # Recursive Markdown scanner with hash detection
-│   │   ├── indexer.py         # Incremental sync (create/update/delete by hash)
-│   │   └── websocket.py       # WS server: register, heartbeat, doc sync
-│   └── api/
-│       ├── router.py          # Route aggregation + /stats
-│       ├── documents.py       # CRUD + scan trigger
-│       ├── search.py          # Keyword search (SQLite LIKE)
-│       └── nodes.py           # Node management + remote sync
+│   ├── app/                   # 应用主包（uv run agentvault 启动）
+│   │   ├── main.py            # FastAPI entry point, WebSocket endpoint
+│   │   ├── __main__.py        # uv run agentvault [--mcp] 入口
+│   │   ├── config.py          # Settings with pydantic-settings (paths anchored to BASE_DIR)
+│   │   ├── db.py              # Async SQLAlchemy engine/session
+│   │   ├── models/
+│   │   │   ├── document.py    # Document model (id, node_id, path, title, hash, content)
+│   │   │   └── node.py        # Node model (id, name, platform, status, token)
+│   │   ├── services/
+│   │   │   ├── scanner.py     # Recursive Markdown scanner with hash detection
+│   │   │   ├── indexer.py     # Incremental sync (create/update/delete by hash)
+│   │   │   ├── websocket.py   # WS server: register, heartbeat, doc sync
+│   │   │   ├── rag/           # RAG: embeddings (multi-provider) + pgvector store
+│   │   │   └── mcp_server.py  # MCP Server (stdio mode)
+│   │   └── api/
+│   │       ├── __init__.py    # Route aggregation + /stats
+│   │       ├── documents.py   # CRUD + scan trigger
+│   │       ├── search.py      # Keyword search (SQLite LIKE)
+│   │       └── nodes.py       # Node management + remote sync
+│   └── tests/
 │
 ├── node/                      # Node client (lightweight)
 │   ├── main.py                # Entry point
@@ -83,11 +88,11 @@ All Python commands use `uv` for package management.
 ```bash
 cd server
 uv sync                          # Install dependencies
-uv run python main.py            # Start Hub on :8000
+uv run agentvault            # Start Hub on :8000
 
 # With PostgreSQL
 uv sync --extra postgres
-AV_DB_TYPE=postgres uv run python main.py
+AV_DB_TYPE=postgres uv run agentvault
 ```
 
 ### Frontend (web)
@@ -104,7 +109,7 @@ npm run build                    # Build to web/dist/
 ```bash
 cd node
 uv sync
-AV_HUB_URL=ws://localhost:8000/ws AV_KNOWLEDGE_ROOTS=~/Knowledge uv run python main.py
+AV_HUB_URL=ws://localhost:8000/ws AV_KNOWLEDGE_ROOTS=~/Knowledge uv run agentvault
 ```
 
 ### Makefile Shortcuts

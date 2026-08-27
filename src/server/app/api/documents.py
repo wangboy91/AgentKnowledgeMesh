@@ -11,9 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db import get_session
-from models.document import Document
-from config import settings
+from app.db import get_session
+from app.models.document import Document
+from app.config import settings
 
 router = APIRouter()
 
@@ -80,8 +80,8 @@ async def scan_documents(
     session: AsyncSession = Depends(get_session),
 ):
     """触发扫描知识库目录."""
-    from services.scanner import scan_knowledge_root
-    from services.indexer import sync_documents
+    from app.services.scanner import scan_knowledge_root
+    from app.services.indexer import sync_documents
 
     documents = await scan_knowledge_root()
     stats = await sync_documents(session, documents)
@@ -119,7 +119,7 @@ async def update_document(
 
     # 更新向量存储
     try:
-        from services.vector_store import add_document
+        from app.services.rag.vector_store import add_document
         add_document(
             doc_id=doc.id,
             title=doc.title,
@@ -173,7 +173,7 @@ async def create_document(
 
     # 添加到向量存储
     try:
-        from services.vector_store import add_document
+        from app.services.rag.vector_store import add_document
         add_document(
             doc_id=doc.id,
             title=doc.title,

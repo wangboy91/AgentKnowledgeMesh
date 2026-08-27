@@ -13,8 +13,8 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from sqlalchemy import select, or_
 
-from db import async_session
-from models.document import Document
+from app.db import async_session
+from app.models.document import Document
 
 
 async def handle_list_tools(ctx, params) -> types.ListToolsResult:

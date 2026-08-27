@@ -3,8 +3,9 @@
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
-# 项目根目录（server 的父目录）
-PROJECT_ROOT = Path(__file__).parent.parent
+# 项目根目录（src/server，即 app 包的父目录）
+# 所有相对路径均锚定到此目录，与运行时 CWD 无关
+BASE_DIR = Path(__file__).parent.parent
 
 
 class Settings(BaseSettings):
@@ -21,8 +22,8 @@ class Settings(BaseSettings):
     # 类型: sqlite / postgres
     db_type: str = "sqlite"
 
-    # SQLite 配置
-    db_path: str = "data/agentvault.db"
+    # SQLite 配置（锚定到项目根目录，Docker 中通过 AV_DB_PATH 覆盖）
+    db_path: str = str(BASE_DIR / "data" / "agentvault.db")
 
     # PostgreSQL 配置
     db_host: str = "localhost"
@@ -39,14 +40,32 @@ class Settings(BaseSettings):
     scan_extensions: list[str] = [".md"]
     max_file_size_mb: int = 10
 
-    # 向量搜索配置
-    embedding_model: str = "all-MiniLM-L6-v2"
+    # 向量嵌入配置（支持多供应商切换）
+    # 供应商: ark (火山引擎 Ark API) / local (本地 sentence-transformers)
+    embedding_provider: str = "ark"
+    embedding_model: str = "doubao-embedding-vision-250615"
+
+    # 火山引擎 Ark API 配置
+    ark_api_key: str = ""
+    ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+
+    # 分块配置
     chunk_size: int = 500
     chunk_overlap: int = 50
 
+    # 向量数据库配置（PostgreSQL + pgvector）
+    vector_db_host: str = "124.222.52.252"
+    vector_db_port: int = 15432
+    vector_db_name: str = "rag_test"
+    vector_db_user: str = "kong"
+    vector_db_password: str = "kong123"
+    vector_db_table: str = "document_vectors"
+    # 向量维度: 0 表示自动检测（首次嵌入时确定）
+    vector_dimensions: int = 0
+
     model_config = {
         "env_prefix": "AV_",
-        "env_file": str(PROJECT_ROOT / ".env"),
+        "env_file": str(BASE_DIR / ".env"),
     }
 
     @property

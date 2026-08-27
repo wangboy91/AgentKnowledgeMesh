@@ -11,8 +11,8 @@ from datetime import datetime
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
 
-from config import settings
-from services.converters import convert_pdf, convert_docx, convert_html, convert_url
+from app.config import settings
+from app.services.converters import convert_pdf, convert_docx, convert_html, convert_url
 
 logger = logging.getLogger(__name__)
 

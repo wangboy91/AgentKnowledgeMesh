@@ -13,8 +13,8 @@ from datetime import datetime
 from typing import Dict, Optional
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
-from db import async_session
-from models.node import Node
+from app.db import async_session
+from app.models.node import Node
 
 
 class ConnectionManager:

@@ -47,6 +47,53 @@ export interface SystemStats {
   online_nodes: number
 }
 
+/** RAG 语义搜索结果项 */
+export interface RagSearchResult {
+  doc_id: number
+  title: string
+  path: string
+  node_id: string
+  chunk: string
+  score: number
+}
+
+/** RAG 语义搜索响应 */
+export interface RagSearchResponse {
+  query: string
+  count: number
+  results: RagSearchResult[]
+}
+
+/** RAG 上下文文档 */
+export interface RagContextDoc {
+  title: string
+  content: string
+  path: string
+  node_id: string
+  score: number
+  matched_chunk: string
+}
+
+/** RAG 上下文响应 */
+export interface RagContextResponse {
+  query: string
+  count: number
+  documents: RagContextDoc[]
+}
+
+/** RAG 索引响应 */
+export interface RagIndexResponse {
+  message: string
+  indexed: number
+  total_chunks: number
+}
+
+/** 向量存储统计 */
+export interface VectorStats {
+  total_chunks: number
+  error?: string
+}
+
 async function fetchJSON<T>(url: string): Promise<T> {
   const response = await fetch(url)
   if (!response.ok) {
@@ -125,6 +172,32 @@ export const api = {
   /** 搜索文档 */
   search(query: string, limit = 20): Promise<SearchResponse> {
     return fetchJSON(`${BASE_URL}/search?q=${encodeURIComponent(query)}&limit=${limit}`)
+  },
+
+  // ========== RAG ==========
+
+  /** RAG 语义搜索 */
+  ragSearch(query: string, limit = 5, nodeId?: string): Promise<RagSearchResponse> {
+    let url = `${BASE_URL}/rag/search?q=${encodeURIComponent(query)}&limit=${limit}`
+    if (nodeId) url += `&node_id=${nodeId}`
+    return fetchJSON(url)
+  },
+
+  /** 获取 RAG 上下文（用于 AI prompt 注入） */
+  ragContext(query: string, limit = 3, nodeId?: string): Promise<RagContextResponse> {
+    let url = `${BASE_URL}/rag/context?q=${encodeURIComponent(query)}&limit=${limit}`
+    if (nodeId) url += `&node_id=${nodeId}`
+    return fetchJSON(url)
+  },
+
+  /** 触发 RAG 全量索引 */
+  ragIndex(): Promise<RagIndexResponse> {
+    return postJSON(`${BASE_URL}/rag/index`)
+  },
+
+  /** 获取向量存储统计 */
+  getVectorStats(): Promise<VectorStats> {
+    return fetchJSON(`${BASE_URL}/rag/stats`)
   },
 
   // ========== Nodes ==========

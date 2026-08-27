@@ -17,7 +17,7 @@ from typing import Optional
 from sqlalchemy import Integer, String, Text, DateTime, func, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from db import Base
+from app.db import Base
 
 
 class Document(Base):

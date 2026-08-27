@@ -96,7 +96,7 @@ open http://localhost:8000
 # 后端
 cd src/server
 uv sync
-uv run python main.py
+uv run agentvault
 
 # 前端（另一个终端）
 cd src/web
@@ -118,7 +118,7 @@ export AV_HUB_URL=ws://hub-ip:8000/ws
 export AV_KNOWLEDGE_ROOTS=~/Knowledge
 
 # 启动
-uv run python main.py
+uv run agentvault
 ```
 
 Or use Makefile:
@@ -142,7 +142,7 @@ AgentKnowledgeMesh 支持 MCP (Model Context Protocol)，让 AI 工具可以直�
   "mcpServers": {
     "agentknowledge": {
       "command": "uv",
-      "args": ["run", "python", "main.py", "--mcp"],
+      "args": ["run", "agentvault", "--mcp"],
       "cwd": "src/server"
     }
   }
@@ -248,21 +248,28 @@ Supported formats: PDF, DOCX, HTML
 AgentKnowledgeMesh/
 ├── src/
 │   ├── server/            # Hub backend (FastAPI)
-│   │   ├── main.py        # Entry point
-│   │   ├── config.py      # Configuration
-│   │   ├── db.py          # Database connection
-│   │   ├── models/        # SQLAlchemy models
-│   │   ├── services/      # Business logic
-│   │   │   ├── scanner.py
-│   │   │   ├── indexer.py
-│   │   │   ├── websocket.py
-│   │   │   └── mcp_server.py  # MCP Server
-│   │   └── api/           # REST API handlers
-│   │       ├── documents.py
-│   │       ├── search.py
-│   │       ├── nodes.py
-│   │       ├── context.py
-│   │       └── mcp.py
+│   │   ├── app/           # 应用主包（uv run agentvault 启动）
+│   │   │   ├── main.py    # FastAPI 入口 + lifespan
+│   │   │   ├── config.py  # 配置（路径锚定项目根，CWD 无关）
+│   │   │   ├── db.py      # 数据库连接
+│   │   │   ├── models/    # SQLAlchemy models
+│   │   │   ├── services/  # 业务逻辑
+│   │   │   │   ├── scanner.py
+│   │   │   │   ├── indexer.py
+│   │   │   │   ├── websocket.py
+│   │   │   │   ├── rag/   # RAG 子域（embeddings + vector_store）
+│   │   │   │   ├── converters/  # 文档转换（PDF/Word/HTML/URL）
+│   │   │   │   └── mcp_server.py  # MCP Server
+│   │   │   └── api/       # REST API handlers
+│   │   │       ├── documents.py
+│   │   │       ├── search.py
+│   │   │       ├── rag.py
+│   │   │       ├── nodes.py
+│   │   │       ├── context.py
+│   │   │       └── mcp.py
+│   │   ├── tests/         # 测试
+│   │   ├── .env           # 环境变量（不入库）
+│   │   └── pyproject.toml
 │   ├── node/              # Node client
 │   │   ├── main.py
 │   │   ├── config.py

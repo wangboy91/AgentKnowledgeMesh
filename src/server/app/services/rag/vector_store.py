@@ -1,53 +1,142 @@
 """向量存储服务.
 
-使用 ChromaDB 作为向量数据库，支持：
+使用 PostgreSQL + pgvector 作为向量数据库，支持：
 - 文档向量化存储
-- 语义搜索
+- 语义搜索（余弦相似度）
 - 按节点过滤
 """
 
 import logging
-from pathlib import Path
 
-import chromadb
-from chromadb.config import Settings
+import psycopg2
+from psycopg2.extras import execute_values
 
-from config import settings
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# ChromaDB 客户端实例
-_client = None
-_collection = None
+# 数据库连接
+_conn = None
+# 表是否已初始化（懒加载标记）
+_table_ready = False
 
 
-def get_client() -> chromadb.ClientAPI:
-    """获取 ChromaDB 客户端."""
-    global _client
-    if _client is None:
-        # 使用持久化存储
-        persist_dir = Path(settings.db_path).parent / "chromadb"
-        persist_dir.mkdir(parents=True, exist_ok=True)
-
-        _client = chromadb.PersistentClient(
-            path=str(persist_dir),
-            settings=Settings(anonymized_telemetry=False)
+def get_conn():
+    """获取 PostgreSQL 连接."""
+    global _conn
+    if _conn is None or _conn.closed:
+        _conn = psycopg2.connect(
+            host=settings.vector_db_host,
+            port=settings.vector_db_port,
+            dbname=settings.vector_db_name,
+            user=settings.vector_db_user,
+            password=settings.vector_db_password,
         )
-        logger.info(f"ChromaDB initialized at {persist_dir}")
-    return _client
-
-
-def get_collection():
-    """获取或创建文档集合."""
-    global _collection
-    if _collection is None:
-        client = get_client()
-        _collection = client.get_or_create_collection(
-            name="documents",
-            metadata={"hnsw:space": "cosine"}  # 使用余弦相似度
+        _conn.autocommit = True
+        logger.info(
+            f"Connected to vector DB: {settings.vector_db_host}:{settings.vector_db_port}/{settings.vector_db_name}"
         )
-        logger.info(f"Collection 'documents' ready, count: {_collection.count()}")
-    return _collection
+    return _conn
+
+
+def _detect_dimension() -> int:
+    """确定向量维度.
+
+    优先使用配置的 vector_dimensions（>0），
+    否则通过嵌入探测文本自动检测。
+    """
+    if settings.vector_dimensions > 0:
+        return settings.vector_dimensions
+
+    from app.services.rag.embeddings import get_dimension
+    return get_dimension()
+
+
+def init_table():
+    """初始化向量表.
+
+    - 表不存在时创建
+    - 已存在但维度不匹配（切换了嵌入模型）时自动重建
+    """
+    global _table_ready
+    conn = get_conn()
+    table = settings.vector_db_table
+    dim = _detect_dimension()
+
+    with conn.cursor() as cur:
+        # 确保 pgvector 扩展已安装
+        cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+
+        # 检查表是否存在
+        cur.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = %s",
+            (table,),
+        )
+        table_exists = cur.fetchone() is not None
+
+        if table_exists:
+            # 检查现有 embedding 列的维度
+            cur.execute(
+                """SELECT format_type(a.atttypid, a.atttypmod)
+                   FROM pg_attribute a
+                   WHERE a.attrelid = %s::regclass AND a.attname = 'embedding'""",
+                (table,),
+            )
+            row = cur.fetchone()
+            if row and f"({dim})" not in row[0]:
+                # 维度不匹配，模型已切换，旧向量不兼容，重建表
+                logger.warning(
+                    f"Vector dimension mismatch (existing {row[0]}, need {dim}), "
+                    f"recreating table '{table}'"
+                )
+                cur.execute(f"DROP TABLE {table}")
+                table_exists = False
+
+        if not table_exists:
+            cur.execute(f"""
+                CREATE TABLE {table} (
+                    id TEXT PRIMARY KEY,
+                    doc_id INTEGER NOT NULL,
+                    title TEXT,
+                    path TEXT,
+                    node_id TEXT,
+                    chunk_index INTEGER,
+                    total_chunks INTEGER,
+                    content TEXT,
+                    embedding vector({dim})
+                );
+            """)
+
+        # doc_id 索引
+        cur.execute(f"""
+            CREATE INDEX IF NOT EXISTS idx_{table}_doc_id
+            ON {table} (doc_id);
+        """)
+
+        # 向量相似度索引（HNSW）
+        # 注意：pgvector HNSW 索引上限 2000 维，超过时使用 halfvec 表达式索引（上限 4000 维）
+        try:
+            if dim <= 2000:
+                cur.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{table}_embedding
+                    ON {table} USING hnsw (embedding vector_cosine_ops);
+                """)
+            else:
+                cur.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{table}_embedding
+                    ON {table} USING hnsw ((embedding::halfvec({dim})) halfvec_cosine_ops);
+                """)
+        except Exception as e:
+            logger.warning(f"Vector index creation deferred: {e}")
+
+    _table_ready = True
+    logger.info(f"Vector table '{table}' ready (dim={dim})")
+
+
+def ensure_table():
+    """确保向量表已初始化（懒加载，供各入口调用）."""
+    if not _table_ready:
+        init_table()
 
 
 def add_document(doc_id: int, title: str, path: str, content: str,
@@ -62,59 +151,56 @@ def add_document(doc_id: int, title: str, path: str, content: str,
         node_id: 节点 ID
         chunk_size: 分块大小
     """
-    from services.embeddings import embed_texts, chunk_text
+    from app.services.rag.embeddings import embed_texts, chunk_text
 
-    collection = get_collection()
+    ensure_table()
+    conn = get_conn()
+    table = settings.vector_db_table
 
     # 先删除该文档的旧向量
     delete_document(doc_id)
 
     # 分块
     chunks = chunk_text(content, chunk_size=chunk_size)
-
     if not chunks:
         return
 
     # 生成向量
     embeddings = embed_texts(chunks)
 
-    # 构建元数据
-    ids = [f"doc_{doc_id}_chunk_{i}" for i in range(len(chunks))]
-    metadatas = [
-        {
-            "doc_id": doc_id,
-            "title": title,
-            "path": path,
-            "node_id": node_id,
-            "chunk_index": i,
-            "total_chunks": len(chunks),
-        }
-        for i in range(len(chunks))
-    ]
+    # 构建数据
+    rows = []
+    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+        row_id = f"doc_{doc_id}_chunk_{i}"
+        # pgvector 接受字符串格式 '[1.0, 2.0, ...]'
+        emb_str = "[" + ",".join(str(v) for v in embedding) + "]"
+        rows.append((row_id, doc_id, title, path, node_id, i, len(chunks), chunk, emb_str))
 
-    # 添加到集合
-    collection.add(
-        ids=ids,
-        embeddings=embeddings,
-        documents=chunks,
-        metadatas=metadatas,
-    )
+    # 批量插入
+    with conn.cursor() as cur:
+        execute_values(
+            cur,
+            f"""INSERT INTO {table}
+                (id, doc_id, title, path, node_id, chunk_index, total_chunks, content, embedding)
+                VALUES %s""",
+            rows,
+            template="(%s, %s, %s, %s, %s, %s, %s, %s, %s::vector)",
+        )
 
     logger.debug(f"Added {len(chunks)} chunks for doc {doc_id}")
 
 
 def delete_document(doc_id: int):
     """删除文档的所有向量."""
-    collection = get_collection()
+    ensure_table()
+    conn = get_conn()
+    table = settings.vector_db_table
 
-    # 查找该文档的所有 chunk
-    results = collection.get(
-        where={"doc_id": doc_id}
-    )
-
-    if results["ids"]:
-        collection.delete(ids=results["ids"])
-        logger.debug(f"Deleted {len(results['ids'])} chunks for doc {doc_id}")
+    with conn.cursor() as cur:
+        cur.execute(f"DELETE FROM {table} WHERE doc_id = %s", (doc_id,))
+        deleted = cur.rowcount
+        if deleted > 0:
+            logger.debug(f"Deleted {deleted} chunks for doc {doc_id}")
 
 
 def search(query: str, limit: int = 5, node_id: str | None = None) -> list[dict]:
@@ -128,60 +214,74 @@ def search(query: str, limit: int = 5, node_id: str | None = None) -> list[dict]
     Returns:
         搜索结果列表
     """
-    from services.embeddings import embed_text
+    from app.services.rag.embeddings import embed_text, get_dimension
 
-    collection = get_collection()
-
-    if collection.count() == 0:
-        return []
+    ensure_table()
+    conn = get_conn()
+    table = settings.vector_db_table
 
     # 生成查询向量
     query_embedding = embed_text(query)
+    emb_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
 
-    # 构建过滤条件
-    where = None
+    # 距离表达式：与索引保持一致
+    # pgvector HNSW 上限 2000 维，超过时索引和查询都用 halfvec
+    if get_dimension() > 2000:
+        dist_expr = "embedding::halfvec <=> %s::halfvec"
+    else:
+        dist_expr = "embedding <=> %s::vector"
+
+    # 构建查询
+    # 使用余弦距离: 1 - cosine_distance = cosine_similarity
+    # 子查询取每个文档最高分 chunk，外层按分数排序
+    where_clause = ""
+    params = [emb_str]
+
     if node_id:
-        where = {"node_id": node_id}
+        where_clause = "WHERE node_id = %s"
+        params.append(node_id)
 
-    # 搜索
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=min(limit, collection.count()),
-        where=where,
-        include=["documents", "metadatas", "distances"]
-    )
+    sql = f"""
+        SELECT doc_id, title, path, node_id, content, score FROM (
+            SELECT DISTINCT ON (doc_id)
+                doc_id, title, path, node_id, content,
+                1 - ({dist_expr}) AS score
+            FROM {table}
+            {where_clause}
+            ORDER BY doc_id, score DESC
+        ) sub
+        ORDER BY score DESC
+        LIMIT %s
+    """
+    params.append(limit)
 
-    # 整理结果
-    search_results = []
-    seen_docs = set()
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        rows = cur.fetchall()
 
-    for i, (doc, metadata, distance) in enumerate(zip(
-        results["documents"][0],
-        results["metadatas"][0],
-        results["distances"][0]
-    )):
-        doc_id = metadata["doc_id"]
-
-        # 去重：同一文档只返回最相关的 chunk
-        if doc_id in seen_docs:
-            continue
-        seen_docs.add(doc_id)
-
-        search_results.append({
-            "doc_id": doc_id,
-            "title": metadata["title"],
-            "path": metadata["path"],
-            "node_id": metadata["node_id"],
-            "chunk": doc,
-            "score": 1 - distance,  # 转换为相似度分数
+    results = []
+    for row in rows:
+        results.append({
+            "doc_id": row[0],
+            "title": row[1],
+            "path": row[2],
+            "node_id": row[3],
+            "chunk": row[4],
+            "score": float(row[5]),
         })
 
-    return search_results[:limit]
+    return results
 
 
 def get_stats() -> dict:
     """获取向量存储统计."""
-    collection = get_collection()
+    conn = get_conn()
+    table = settings.vector_db_table
+
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT COUNT(*) FROM {table}")
+        count = cur.fetchone()[0]
+
     return {
-        "total_chunks": collection.count(),
+        "total_chunks": count,
     }

@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db import get_session
-from models.document import Document
-from services import vector_store
+from app.db import get_session
+from app.models.document import Document
+from app.services.rag import vector_store
 
 logger = logging.getLogger(__name__)
 

@@ -7,10 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db import get_session
-from models.node import Node
-from models.document import Document
-from services.websocket import manager
+from app.db import get_session
+from app.models.node import Node
+from app.models.document import Document
+from app.services.websocket import manager
 
 router = APIRouter()
 
