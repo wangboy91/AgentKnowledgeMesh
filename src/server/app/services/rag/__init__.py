@@ -5,15 +5,19 @@
 """
 
 from app.services.rag.embeddings import (
-    chunk_text,
     embed_text,
     embed_texts,
     get_dimension,
 )
+from app.services.rag.chunking import (
+    chunk_markdown,
+    estimate_tokens,
+)
 from app.services.rag import vector_store
 
 __all__ = [
-    "chunk_text",
+    "chunk_markdown",
+    "estimate_tokens",
     "embed_text",
     "embed_texts",
     "get_dimension",

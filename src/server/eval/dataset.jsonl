@@ -1,0 +1,20 @@
+{"query": "RAG 和知识工程的核心概念有哪些？", "relevant_doc_ids": [7], "node_id": null}
+{"query": "如何做 Vibe Coding 工程化？", "relevant_doc_ids": [1], "node_id": null}
+{"query": "AI Agent 面试会考哪些知识点？", "relevant_doc_ids": [9, 15], "node_id": null}
+{"query": "MCP 和安全边界怎么理解？", "relevant_doc_ids": [13], "node_id": null}
+{"query": "Agent 架构有哪些设计模式？", "relevant_doc_ids": [20], "node_id": null}
+{"query": "LLM 基础和 Prompt 工程要点", "relevant_doc_ids": [19], "node_id": null}
+{"query": "生产环境的观测和评测怎么做？", "relevant_doc_ids": [11], "node_id": null}
+{"query": "Harness Engineering 是什么？", "relevant_doc_ids": [12, 22], "node_id": null}
+{"query": "Agent 之间怎么通信和调用？", "relevant_doc_ids": [14], "node_id": null}
+{"query": "什么是 GEO？如何从 SEO 升级到被 AI 答案引用？", "relevant_doc_ids": [25], "node_id": null}
+{"query": "OpenSpec 团队协作 Vibe Coding 怎么用？", "relevant_doc_ids": [27], "node_id": null}
+{"query": "AI 口播视频工具有哪些？", "relevant_doc_ids": [3], "node_id": null}
+{"query": "百度数字人平台怎么做口播视频？", "relevant_doc_ids": [4], "node_id": null}
+{"query": "AI 内容生成平台有哪些值得调研？", "relevant_doc_ids": [5], "node_id": null}
+{"query": "Vercel Eve 是什么？怎么用？", "relevant_doc_ids": [30], "node_id": null}
+{"query": "如何用手机远程控制 Claude Code？", "relevant_doc_ids": [31], "node_id": null}
+{"query": "AI Agent 工具体系怎么选型？", "relevant_doc_ids": [29], "node_id": null}
+{"query": "智能体搭建从真实场景怎么拆解？", "relevant_doc_ids": [32], "node_id": null}
+{"query": "企业 AI 落地有哪些场景？", "relevant_doc_ids": [40], "node_id": null}
+{"query": "面试前怎么冲刺复习？", "relevant_doc_ids": [6, 21], "node_id": null}

@@ -1,12 +1,13 @@
 """向量存储服务.
 
 使用 PostgreSQL + pgvector 作为向量数据库，支持：
-- 文档向量化存储
-- 语义搜索（余弦相似度）
+- 文档向量化存储（Markdown 感知分块）
+- 混合检索（dense 向量 ⊕ sparse 关键词，RRF 融合）
 - 按节点过滤
 """
 
 import logging
+import re
 
 import psycopg2
 from psycopg2.extras import execute_values
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 _conn = None
 # 表是否已初始化（懒加载标记）
 _table_ready = False
+
+# 稀疏检索分词：ASCII 词/数字串 或 CJK 连续串
+_TERM = re.compile(r"[A-Za-z0-9]+|[一-鿿]+")
 
 
 def get_conn():
@@ -52,6 +56,7 @@ def init_table():
 
     - 表不存在时创建
     - 已存在但维度不匹配（切换了嵌入模型）时自动重建
+    - 建 pg_trgm 扩展与三元组 GIN 索引（稀疏检索用；不可用时降级为全表 ILIKE）
     """
     global _table_ready
     conn = get_conn()
@@ -124,6 +129,19 @@ def init_table():
         except Exception as e:
             logger.warning(f"Vector index creation deferred: {e}")
 
+        # pg_trgm 三元组索引（稀疏检索的关键词精确命中）
+        try:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
+            for col in ("content", "title", "path"):
+                cur.execute(f"""
+                    CREATE INDEX IF NOT EXISTS idx_{table}_{col}_trgm
+                    ON {table} USING gin ({col} gin_trgm_ops);
+                """)
+        except Exception as e:
+            logger.warning(
+                f"pg_trgm/trigram index unavailable, sparse search falls back to full scan: {e}"
+            )
+
     _table_ready = True
     logger.info(f"Vector table '{table}' ready (dim={dim})")
 
@@ -135,7 +153,7 @@ def ensure_table():
 
 
 def add_document(doc_id: int, title: str, path: str, content: str,
-                 node_id: str, chunk_size: int = 500):
+                 node_id: str, chunk_size: int | None = None):
     """将文档添加到向量存储.
 
     Args:
@@ -144,9 +162,10 @@ def add_document(doc_id: int, title: str, path: str, content: str,
         path: 文档路径
         content: 文档内容
         node_id: 节点 ID
-        chunk_size: 分块大小
+        chunk_size: 分块目标 token 数（None 时用 settings.chunk_size）
     """
-    from app.services.rag.embeddings import embed_texts, chunk_text
+    from app.services.rag.chunking import chunk_markdown
+    from app.services.rag.embeddings import embed_texts
 
     ensure_table()
     conn = get_conn()
@@ -155,8 +174,9 @@ def add_document(doc_id: int, title: str, path: str, content: str,
     # 先删除该文档的旧向量
     delete_document(doc_id)
 
-    # 分块
-    chunks = chunk_text(content, chunk_size=chunk_size)
+    # Markdown 感知分块（token 计数 + 标题前置 + 重叠）
+    size = chunk_size if chunk_size is not None else settings.chunk_size
+    chunks = chunk_markdown(content, chunk_size=size, chunk_overlap=settings.chunk_overlap)
     if not chunks:
         return
 
@@ -198,53 +218,47 @@ def delete_document(doc_id: int):
             logger.debug(f"Deleted {deleted} chunks for doc {doc_id}")
 
 
-def search(query: str, limit: int = 5, node_id: str | None = None) -> list[dict]:
-    """语义搜索.
+def _row_to_result(row) -> dict:
+    """将查询行转换为结果 dict."""
+    return {
+        "doc_id": row[0],
+        "title": row[1],
+        "path": row[2],
+        "node_id": row[3],
+        "chunk": row[4],
+        "score": float(row[5]),
+    }
 
-    Args:
-        query: 查询文本
-        limit: 返回结果数量
-        node_id: 可选，按节点过滤
 
-    Returns:
-        搜索结果列表
-    """
+def search_dense(query: str, node_id: str | None = None,
+                 candidate_limit: int | None = None) -> list[dict]:
+    """稠密检索：pgvector 余弦相似度，chunk 级 top-N 候选（不按文档去重）."""
     from app.services.rag.embeddings import embed_text, get_dimension
 
     ensure_table()
     conn = get_conn()
     table = settings.vector_db_table
+    limit = candidate_limit or settings.search_candidate_limit
 
-    # 生成查询向量
     query_embedding = embed_text(query)
     emb_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
 
     # 距离表达式：与索引保持一致
-    # pgvector HNSW 上限 2000 维，超过时索引和查询都用 halfvec
     if get_dimension() > 2000:
         dist_expr = "embedding::halfvec <=> %s::halfvec"
     else:
         dist_expr = "embedding <=> %s::vector"
 
-    # 构建查询
-    # 使用余弦距离: 1 - cosine_distance = cosine_similarity
-    # 子查询取每个文档最高分 chunk，外层按分数排序
     where_clause = ""
     params = [emb_str]
-
     if node_id:
         where_clause = "WHERE node_id = %s"
         params.append(node_id)
 
     sql = f"""
-        SELECT doc_id, title, path, node_id, content, score FROM (
-            SELECT DISTINCT ON (doc_id)
-                doc_id, title, path, node_id, content,
-                1 - ({dist_expr}) AS score
-            FROM {table}
-            {where_clause}
-            ORDER BY doc_id, score DESC
-        ) sub
+        SELECT doc_id, title, path, node_id, content, 1 - ({dist_expr}) AS score
+        FROM {table}
+        {where_clause}
         ORDER BY score DESC
         LIMIT %s
     """
@@ -254,18 +268,167 @@ def search(query: str, limit: int = 5, node_id: str | None = None) -> list[dict]
         cur.execute(sql, params)
         rows = cur.fetchall()
 
-    results = []
-    for row in rows:
-        results.append({
-            "doc_id": row[0],
-            "title": row[1],
-            "path": row[2],
-            "node_id": row[3],
-            "chunk": row[4],
-            "score": float(row[5]),
-        })
+    return [_row_to_result(r) for r in rows]
+
+
+def _tokenize(query: str) -> list[str]:
+    """将查询切分为词项，去重保序.
+
+    ASCII 词/数字串按整词保留；CJK 连续串拆成重叠二元组（bi-gram），
+    使无分词器的稀疏侧仍能命中中文子串（如「知识工程」→ 知识/识工/工程）。
+    """
+    terms = _TERM.findall(query)
+    out: list[str] = []
+    for t in terms:
+        if t.isascii():
+            # 单个 ASCII 字符/数字噪声大，丢弃
+            if len(t) >= 2:
+                out.append(t)
+        elif len(t) <= 2:
+            out.append(t)
+        else:
+            out.extend(t[i:i + 2] for i in range(len(t) - 1))
+    seen: set[str] = set()
+    dedup: list[str] = []
+    for t in out:
+        if t not in seen:
+            seen.add(t)
+            dedup.append(t)
+    return dedup
+
+
+def _like_pattern(term: str) -> str:
+    """将词项转为 ILIKE 模式，转义 ``%`` / ``_`` / ``\\``（PostgreSQL 默认反斜杠转义）."""
+    esc = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{esc}%"
+
+
+def search_sparse(query: str, node_id: str | None = None,
+                  candidate_limit: int | None = None) -> list[dict]:
+    """稀疏检索：pg_trgm 关键词精确命中（content/title/path），命中词项数打分."""
+    terms = _tokenize(query)
+    if not terms:
+        return []
+
+    ensure_table()
+    conn = get_conn()
+    table = settings.vector_db_table
+    limit = candidate_limit or settings.search_candidate_limit
+
+    # 命中词项数打分：每个词项命中任一字段计 1
+    score_parts: list[str] = []
+    where_parts: list[str] = []
+    params: list[str] = []
+
+    for t in terms:
+        score_parts.append(
+            "(CASE WHEN content ILIKE %s OR title ILIKE %s OR path ILIKE %s "
+            "THEN 1 ELSE 0 END)"
+        )
+        params.extend([_like_pattern(t)] * 3)
+
+    for t in terms:
+        where_parts.append(
+            "(content ILIKE %s OR title ILIKE %s OR path ILIKE %s)"
+        )
+        params.extend([_like_pattern(t)] * 3)
+
+    score_sql = " + ".join(score_parts)
+    where_sql = " OR ".join(where_parts)
+
+    node_filter = ""
+    if node_id:
+        node_filter = "AND node_id = %s"
+        params.append(node_id)
+
+    sql = f"""
+        SELECT doc_id, title, path, node_id, content, ({score_sql}) AS score
+        FROM {table}
+        WHERE ({where_sql}) {node_filter}
+        ORDER BY score DESC
+        LIMIT %s
+    """
+    params.append(limit)
+
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+
+    return [_row_to_result(r) for r in rows]
+
+
+def search_hybrid(query: str, limit: int = 5, node_id: str | None = None) -> list[dict]:
+    """混合检索：文档级加权 RRF 融合.
+
+    先对 dense/sparse 各自按「同文档只保留最佳分块」归并出文档级排名，
+    再做加权 RRF 融合，避免 chunk 级融合把多分块文档的排名稀释、
+    或让单分块文档借噪声反超（见 eval 回归定位）。最终按文档 rrf 顺序
+    返回每文档至多 chunks_per_doc 个分块（dense 优先，sparse-only 补充）。
+    """
+    ensure_table()
+    candidate_limit = settings.search_candidate_limit
+
+    dense = search_dense(query, node_id, candidate_limit)
+    sparse = search_sparse(query, node_id, candidate_limit)
+
+    # 相似度阈值过滤（仅作用于 dense 侧；sparse 精确命中不受影响）
+    min_score = settings.search_min_score
+    dense = [d for d in dense if d["score"] >= min_score]
+
+    def _best_per_doc(rows: list[dict]) -> dict[int, dict]:
+        """同文档只保留分数最高的分块."""
+        best: dict[int, dict] = {}
+        for r in rows:
+            d = r["doc_id"]
+            if d not in best or r["score"] > best[d]["score"]:
+                best[d] = r
+        return best
+
+    dense_best = _best_per_doc(dense)
+    sparse_best = _best_per_doc(sparse)
+
+    dense_ranked = sorted(dense_best.values(), key=lambda x: x["score"], reverse=True)
+    sparse_ranked = sorted(sparse_best.values(), key=lambda x: x["score"], reverse=True)
+
+    # 文档级加权 RRF（dense 主导，sparse 温和补充）
+    rrf_k = settings.search_rrf_k
+    dense_w = settings.search_dense_weight
+    sparse_w = settings.search_sparse_weight
+    doc_rrf: dict[int, float] = {}
+    for rank, r in enumerate(dense_ranked, start=1):
+        doc_rrf[r["doc_id"]] = doc_rrf.get(r["doc_id"], 0.0) + dense_w / (rrf_k + rank)
+    for rank, r in enumerate(sparse_ranked, start=1):
+        doc_rrf[r["doc_id"]] = doc_rrf.get(r["doc_id"], 0.0) + sparse_w / (rrf_k + rank)
+
+    ordered_docs = sorted(doc_rrf.items(), key=lambda x: x[1], reverse=True)
+
+    # 按文档 rrf 顺序，每文档返回至多 chunks_per_doc 个分块
+    chunks_per_doc = settings.search_chunks_per_doc
+    results: list[dict] = []
+    for doc_id, rrf_score in ordered_docs:
+        dense_chunks = {r["chunk"] for r in dense if r["doc_id"] == doc_id}
+        doc_dense = [r for r in dense if r["doc_id"] == doc_id]
+        doc_sparse_only = [
+            r for r in sparse
+            if r["doc_id"] == doc_id and r["chunk"] not in dense_chunks
+        ]
+        picked = 0
+        for r in doc_dense + doc_sparse_only:
+            if picked >= chunks_per_doc or len(results) >= limit:
+                break
+            out = dict(r)
+            out["score"] = round(rrf_score, 6)
+            results.append(out)
+            picked += 1
+        if len(results) >= limit:
+            break
 
     return results
+
+
+def search(query: str, limit: int = 5, node_id: str | None = None) -> list[dict]:
+    """语义搜索入口（向后兼容）：返回混合检索结果."""
+    return search_hybrid(query, limit, node_id)
 
 
 def get_stats() -> dict:

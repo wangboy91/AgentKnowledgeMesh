@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import get_session
 from app.models.document import Document
 from app.services.rag import vector_store
@@ -25,10 +26,10 @@ async def semantic_search(
 ):
     """语义搜索.
 
-    使用向量相似度搜索相关文档，而非关键词匹配。
+    使用混合检索（dense 向量 ⊕ sparse 关键词，RRF 融合）搜索相关分块。
     """
     try:
-        results = vector_store.search(
+        results = vector_store.search_hybrid(
             query=q,
             limit=limit,
             node_id=node_id,
@@ -61,10 +62,12 @@ async def get_rag_context(
     返回语义相关的文档完整内容，用于注入到 AI prompt。
     """
     try:
-        # 语义搜索获取相关文档 ID
-        search_results = vector_store.search(
+        # 混合检索（可能同一文档命中多个 chunk）
+        # 为凑满 limit 个不同文档，多取候选再按 doc_id 去重
+        fetch_limit = limit * settings.search_chunks_per_doc
+        search_results = vector_store.search_hybrid(
             query=q,
-            limit=limit,
+            limit=fetch_limit,
             node_id=node_id,
         )
 
@@ -75,15 +78,23 @@ async def get_rag_context(
                 "documents": [],
             }
 
+        # 按 doc_id 去重，保留分数最高的 chunk（结果已按分数降序）
+        best_by_doc: dict[int, dict] = {}
+        for r in search_results:
+            doc_id = r["doc_id"]
+            if doc_id not in best_by_doc or r["score"] > best_by_doc[doc_id]["score"]:
+                best_by_doc[doc_id] = r
+        ordered = list(best_by_doc.values())[:limit]
+
         # 获取文档完整内容
-        doc_ids = [r["doc_id"] for r in search_results]
+        doc_ids = [r["doc_id"] for r in ordered]
         stmt = select(Document).where(Document.id.in_(doc_ids))
         result = await session.execute(stmt)
         documents = {doc.id: doc for doc in result.scalars().all()}
 
         # 按搜索结果顺序组装
         context_docs = []
-        for search_result in search_results:
+        for search_result in ordered:
             doc_id = search_result["doc_id"]
             doc = documents.get(doc_id)
             if doc:

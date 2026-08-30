@@ -333,6 +333,21 @@ Environment variables (prefix `AKM_`):
 | `AKM_KNOWLEDGE_ROOTS` | `~/Knowledge` | Knowledge directories (comma-separated) |
 | `AKM_DEBUG` | `false` | Debug mode |
 
+### RAG / 混合检索配置
+
+语义检索采用 **dense 向量 ⊕ sparse 关键词** 的混合检索，文档级 RRF 融合，分块为 Markdown 感知（标题层级切分、代码块/表格原子保护、token 计数 + 句级重叠）。
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AKM_CHUNK_SIZE` | `512` | 分块目标 token 数（中文逐字 + 英文逐词） |
+| `AKM_CHUNK_OVERLAP` | `64` | 相邻块重叠 token 数 |
+| `AKM_SEARCH_MIN_SCORE` | `0.2` | dense 侧相似度阈值（低于此值丢弃） |
+| `AKM_SEARCH_RRF_K` | `60` | RRF 融合常数 k |
+| `AKM_SEARCH_CHUNKS_PER_DOC` | `2` | 每文档最多返回的分块数 |
+| `AKM_SEARCH_CANDIDATE_LIMIT` | `50` | dense/sparse 各自候选分块数 |
+| `AKM_SEARCH_DENSE_WEIGHT` | `1.0` | RRF 中 dense 权重（主导） |
+| `AKM_SEARCH_SPARSE_WEIGHT` | `0.3` | RRF 中 sparse 权重（温和补充） |
+
 ### Node Configuration
 
 | Variable | Default | Description |
@@ -397,6 +412,18 @@ docker compose -f docker-compose.node.yml up -d
 # 连接到远程 Hub
 AKM_HUB_URL=ws://hub-ip:8000/ws docker compose -f docker-compose.node.yml up -d
 ```
+
+## Retrieval Evaluation
+
+检索质量可用离线评测脚本对比新旧方案，输出 `recall@k` 与 `nDCG@10` 均值：
+
+```bash
+cd src/server
+uv run python eval/run_eval.py            # 默认 eval/dataset.jsonl，k=5
+uv run python eval/run_eval.py --k 10     # 自定义 k
+```
+
+数据集 `src/server/eval/dataset.jsonl` 为手工标注的 JSONL，每行 `query / relevant_doc_ids / node_id`，可自行扩展。脚本会先跑「旧基线（dense 单 chunk）」再跑「新混合检索」，输出对比表；改后指标低于基线时会以非零退出码告警。
 
 ## Roadmap
 

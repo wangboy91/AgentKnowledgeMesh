@@ -89,12 +89,34 @@ class Settings(BaseSettings):
         "https://ark.cn-beijing.volces.com/api/v3",
     )
 
-    # 分块配置
+    # 分块配置（token 计数，见 services/rag/chunking.py）
     chunk_size: int = Field(
-        500,
+        512,
     )
     chunk_overlap: int = Field(
+        64,
+    )
+
+    # 混合检索配置（dense ⊕ sparse，RRF 融合，见 services/rag/vector_store.py）
+    search_min_score: float = Field(
+        0.2,
+    )
+    search_rrf_k: int = Field(
+        60,
+    )
+    search_chunks_per_doc: int = Field(
+        2,
+    )
+    search_candidate_limit: int = Field(
         50,
+    )
+    # 混合检索两侧权重：dense 主导，sparse 温和补充，
+    # 避免宽泛关键词（如 "Agent"）的噪声稀释语义排序
+    search_dense_weight: float = Field(
+        1.0,
+    )
+    search_sparse_weight: float = Field(
+        0.3,
     )
 
     # 向量数据库配置（PostgreSQL + pgvector）
