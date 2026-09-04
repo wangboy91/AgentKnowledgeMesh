@@ -1,6 +1,6 @@
 {
-  "pid": 4422,
-  "version": "0.9.9",
-  "socketPath": "/Users/wangboy/MyWork/AgentKnowledgeMesh/.codegraph/daemon.sock",
-  "startedAt": 1788057605425
+  "pid": 38584,
+  "version": "1.1.0",
+  "socketPath": "\\\\.\\pipe\\codegraph-5b54c2f5620aa6d0",
+  "startedAt": 1788489519925
 }

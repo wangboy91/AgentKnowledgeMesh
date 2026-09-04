@@ -7,6 +7,45 @@
 from app.services.rag.vector_store import _like_pattern, _tokenize
 
 
+class _FakeCursor:
+    """记录 execute 语句并返回预设行的假游标."""
+
+    def __init__(self, rows):
+        self._rows = rows
+        self.executed = None
+
+    def execute(self, sql, params=None):
+        self.executed = sql
+
+    def fetchall(self):
+        return self._rows
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+class _FakeConn:
+    def __init__(self, cur):
+        self._cur = cur
+
+    def cursor(self):
+        return self._cur
+
+
+def test_get_indexed_doc_ids_dedups(monkeypatch):
+    from app.services.rag import vector_store
+
+    cur = _FakeCursor([(1,), (2,), (2,), (3,)])
+    monkeypatch.setattr(vector_store, "ensure_table", lambda: None)
+    monkeypatch.setattr(vector_store, "get_conn", lambda: _FakeConn(cur))
+
+    assert vector_store.get_indexed_doc_ids() == {1, 2, 3}
+    assert "SELECT DISTINCT doc_id FROM" in cur.executed
+
+
 def test_tokenize_ascii_and_cjk():
     assert _tokenize("hello world") == ["hello", "world"]
     assert _tokenize("文件名 abc123") == ["文件", "件名", "abc123"]
@@ -58,6 +97,7 @@ def test_search_hybrid_threshold_filters_low_dense(monkeypatch):
     def fake_sparse(query, node_id=None, candidate_limit=None):
         return []
 
+    monkeypatch.setattr(vector_store, "ensure_table", lambda: None)
     monkeypatch.setattr(vector_store, "search_dense", fake_dense)
     monkeypatch.setattr(vector_store, "search_sparse", fake_sparse)
 
@@ -86,6 +126,7 @@ def test_search_hybrid_multi_chunk_and_rrf(monkeypatch):
             _mk("c3", 3, 1),
         ]
 
+    monkeypatch.setattr(vector_store, "ensure_table", lambda: None)
     monkeypatch.setattr(vector_store, "search_dense", fake_dense)
     monkeypatch.setattr(vector_store, "search_sparse", fake_sparse)
 

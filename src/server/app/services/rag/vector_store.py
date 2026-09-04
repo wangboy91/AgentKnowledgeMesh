@@ -218,6 +218,17 @@ def delete_document(doc_id: int):
             logger.debug(f"Deleted {deleted} chunks for doc {doc_id}")
 
 
+def get_indexed_doc_ids() -> set[int]:
+    """返回向量表中已存在的文档 id 集合（回填脚本「只补缺」判断用）."""
+    ensure_table()
+    conn = get_conn()
+    table = settings.vector_db_table
+
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT DISTINCT doc_id FROM {table}")
+        return {row[0] for row in cur.fetchall()}
+
+
 def _row_to_result(row) -> dict:
     """将查询行转换为结果 dict."""
     return {

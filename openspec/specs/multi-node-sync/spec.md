@@ -90,7 +90,7 @@ Hub SHALL 通过内存中的连接管理器跟踪在线节点；连接断开时�
 
 #### Scenario: 删除节点级联清理
 - **WHEN** 客户端调用 `DELETE /api/nodes/{node_id}`
-- **THEN** 系统删除该节点的全部文档索引，再删除节点记录；节点不存在时返回 404
+- **THEN** 系统删除该节点的全部文档索引及其向量分块，再删除节点记录；节点不存在时返回 404
 
 ### Requirement: Node Document Upload
 Node SHALL 在扫描本地知识库后，将完整文档列表（含 path、title、hash、size、content）通过 HTTP 推送到 Hub 的节点文档入库端点，并携带注册时下发的节点令牌鉴权；触发时机为初始连接成功后与收到 `sync_request` 时。
@@ -108,15 +108,31 @@ Node SHALL 在扫描本地知识库后，将完整文档列表（含 path、titl
 - **THEN** Node 记录错误日志，不中断 WebSocket 连接，等待下一次同步触发重试
 
 ### Requirement: Hub Node Document Ingestion
-Hub SHALL 提供 `PUT /api/nodes/{node_id}/documents` 端点，接收节点推送的文档列表，按 `(node_id, path)` 作用域增量入库：SHA256 哈希不同的文档更新、列表中缺失的该节点文档删除，并返回同步统计。
+Hub SHALL 提供 `PUT /api/nodes/{node_id}/documents` 端点，接收节点推送的文档列表，按 `(node_id, path)` 作用域增量入库：SHA256 哈希不同的文档更新、列表中缺失的该节点文档删除，并返回同步统计。入库的同时 SHALL 维护向量索引：created/updated 的文档在后台生成向量，deleted 的文档清理其向量；向量操作失败 SHALL 仅记录告警、不影响同步响应。
 
 #### Scenario: 新增与更新文档
 - **WHEN** 节点推送的文档列表中包含 Hub 该节点名下不存在或哈希已变的路径
 - **THEN** Hub 插入或更新对应文档记录，统计中计入 created/updated 计数
 
+#### Scenario: 新增与更新文档后台生成向量
+- **WHEN** 本次同步产生 created 或 updated 文档
+- **THEN** Hub 在返回同步统计后，于后台对这些文档分块、嵌入并写入向量表（覆盖其旧向量），同步响应不因嵌入耗时阻塞
+
+#### Scenario: 哈希未变不重复嵌入
+- **WHEN** 节点推送的文档哈希与 Hub 已存记录一致
+- **THEN** Hub 不对该文档重新分块或嵌入
+
 #### Scenario: 清理消失文档
 - **WHEN** 节点推送的文档列表缺少 Hub 该节点名下已存在的某路径
 - **THEN** Hub 删除该节点的该文档记录，统计中计入 deleted 计数
+
+#### Scenario: 删除文档同步清理向量
+- **WHEN** 本次同步删除了该节点名下的文档
+- **THEN** Hub 删除这些文档在向量表中的全部分块
+
+#### Scenario: 嵌入失败降级
+- **WHEN** 后台嵌入或向量清理发生异常
+- **THEN** Hub 记录告警日志，同步响应仍正常返回统计，已入库文档不受影响
 
 #### Scenario: 作用域隔离
 - **WHEN** 节点推送文档列表

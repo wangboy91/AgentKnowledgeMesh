@@ -4,6 +4,8 @@
 - 鉴权（401 无效令牌 / 404 节点不存在）
 - 增量入库（新增 / 更新 / 删除）
 - 作用域隔离（不触及 local 或其他节点）
+- 向量索引派发（created/updated 嵌入、哈希未变跳过、deleted 清理）
+以及 DELETE /api/nodes/{node_id} 的向量级联清理。
 """
 
 import pytest_asyncio
@@ -16,6 +18,24 @@ from app.db import Base, get_session
 from app.main import app
 from app.models.document import Document
 from app.models.node import Node
+
+
+@pytest_asyncio.fixture(autouse=True)
+def stub_vector_store(monkeypatch):
+    """拦截后台向量维护（替换 vector_store 接口），避免测试触达真实 PG / 嵌入 API.
+
+    记录 add_document / delete_document 的调用参数，供派发语义断言。
+    """
+    calls = {"add": [], "delete": []}
+    monkeypatch.setattr(
+        "app.services.rag.vector_store.add_document",
+        lambda **kw: calls["add"].append(kw),
+    )
+    monkeypatch.setattr(
+        "app.services.rag.vector_store.delete_document",
+        lambda doc_id: calls["delete"].append(doc_id),
+    )
+    return calls
 
 
 @pytest_asyncio.fixture
@@ -182,3 +202,87 @@ async def test_put_documents_missing_node(db, client):
         headers={"Authorization": "Bearer whatever"},
     )
     assert resp.status_code == 404
+
+
+async def test_put_documents_dispatches_vector_upsert(db, client, stub_vector_store):
+    """created/updated 文档派发后台嵌入，哈希未变的文档不重复嵌入."""
+    node_id, token = "node-1", "tok-1"
+    await _seed_node(db, node_id, token)
+    await _seed_document(db, node_id, "same.md", hash_="h1", content="same")
+    await _seed_document(db, node_id, "chg.md", hash_="old", content="old")
+
+    resp = await client.put(
+        f"/api/nodes/{node_id}/documents",
+        json=_payload([
+            {"path": "same.md", "title": "Same", "hash": "h1", "size": 4, "content": "same"},
+            {"path": "chg.md", "title": "Changed", "hash": "new", "size": 3, "content": "new"},
+            {"path": "new.md", "title": "New", "hash": "h-new", "size": 3, "content": "new"},
+        ]),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"created": 1, "updated": 1, "deleted": 0}
+
+    # 后台任务在响应周期内执行（ASGITransport 等待完整 ASGI 调用）
+    added = {a["path"] for a in stub_vector_store["add"]}
+    assert added == {"chg.md", "new.md"}  # same.md 哈希未变，不嵌入
+    assert all(a["node_id"] == node_id for a in stub_vector_store["add"])
+    assert stub_vector_store["delete"] == []
+
+
+async def test_put_documents_dispatches_vector_delete(db, client, stub_vector_store):
+    """本次同步删除的文档派发后台向量清理."""
+    node_id, token = "node-1", "tok-1"
+    await _seed_node(db, node_id, token)
+    await _seed_document(db, node_id, "keep.md", hash_="h1")
+    await _seed_document(db, node_id, "gone.md", hash_="h2")
+
+    docs = await _count_docs(db, node_id)
+    gone_id = next(d.id for d in docs if d.path == "gone.md")
+
+    resp = await client.put(
+        f"/api/nodes/{node_id}/documents",
+        json=_payload([{"path": "keep.md", "title": "Keep", "hash": "h1", "size": 0, "content": ""}]),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"created": 0, "updated": 0, "deleted": 1}
+
+    assert stub_vector_store["delete"] == [gone_id]
+    assert stub_vector_store["add"] == []
+
+
+async def test_put_documents_no_changes_no_dispatch(db, client, stub_vector_store):
+    """无增量时（哈希全未变）不派发任何向量操作."""
+    node_id, token = "node-1", "tok-1"
+    await _seed_node(db, node_id, token)
+    await _seed_document(db, node_id, "a.md", hash_="h1")
+
+    resp = await client.put(
+        f"/api/nodes/{node_id}/documents",
+        json=_payload([{"path": "a.md", "title": "A", "hash": "h1", "size": 0, "content": ""}]),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"created": 0, "updated": 0, "deleted": 0}
+
+    assert stub_vector_store["add"] == []
+    assert stub_vector_store["delete"] == []
+
+
+async def test_delete_node_cascades_vector_cleanup(db, client, stub_vector_store):
+    """删除节点级联清理其全部文档的向量分块."""
+    node_id, token = "node-1", "tok-1"
+    await _seed_node(db, node_id, token)
+    await _seed_document(db, node_id, "a.md", hash_="h1")
+    await _seed_document(db, node_id, "b.md", hash_="h2")
+
+    docs = await _count_docs(db, node_id)
+    expected_ids = {d.id for d in docs}
+
+    resp = await client.delete(f"/api/nodes/{node_id}")
+    assert resp.status_code == 200
+
+    assert set(stub_vector_store["delete"]) == expected_ids
+    assert stub_vector_store["add"] == []
+    assert await _count_docs(db, node_id) == []
