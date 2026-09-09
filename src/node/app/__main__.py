@@ -7,9 +7,16 @@
 """
 
 import asyncio
+import sys
 
 from app.config import settings
 from app.runner import HubClient
+
+# Windows 兼容：当 stdout 被重定向（管道/后台服务/CI）且系统编码为 GBK 时，
+# 下面的 emoji 状态打印会触发 UnicodeEncodeError，导致 Node 无法启动。
+for _stream in (sys.stdout, sys.stderr):
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 def main():

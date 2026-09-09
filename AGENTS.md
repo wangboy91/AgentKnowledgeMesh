@@ -1,225 +1,65 @@
-# AGENTS.md
+# AGENTS.md · 工程规约地图
 
-## Project Overview
+> 在本仓工作的 AI 会话与开发者从这里出发。团队章程(身份与铁律)见 `CLAUDE.md`;用户视角的项目说明见 `README.md`。
 
-AgentKnowledgeMesh is a distributed knowledge base system designed for the AI Agent era, suitable for both individuals and enterprises.
-It enables multiple computers to share Markdown knowledge files, Agent memory files, and
-project documents through a unified knowledge network.
+## 1. 项目一句话
 
-The system uses a Hub + Node architecture where:
-- **Hub** (server/) manages nodes, provides Web UI, and offers unified search
-- **Node** (node/) runs on each computer, scans local Markdown, and connects to Hub
+AgentKnowledgeMesh 是面向 AI Agent 时代的分布式知识库(Hub + Node):多机 Markdown 汇聚、关键词⊕语义混合检索、MCP / Context API 接入。它是上层产品的知识与记忆基座,兼公司内网 wiki。
 
-## Repository Layout
+## 2. 规约地图
+
+| 想了解 / 要做的事 | 去哪里 |
+| --- | --- |
+| 产品定位、角色权限、功能地图、迭代计划 | [docs/product-overview.md](docs/product-overview.md) |
+| 当前批次的技术设计(账号鉴权/CLI 接入/同步/RAG 模式/i18n/树形) | [docs/technical-design.md](docs/technical-design.md) |
+| 全部 API 端点 | [docs/api-reference.md](docs/api-reference.md) |
+| **UI 规范**(布局/主题/i18n/交互) | [docs/conventions/ui.md](docs/conventions/ui.md) |
+| **流程规范**(openspec 生命周期/验证基线/红线自查) | [docs/conventions/workflow.md](docs/conventions/workflow.md) |
+| **文件规范**(目录/命名/职责边界) | [docs/conventions/files.md](docs/conventions/files.md) |
+| 正式规范(能力 spec) | `openspec/specs/` |
+| 进行中/历史变更 | `openspec/changes/` |
+
+## 3. 仓库结构
 
 ```
-AgentKnowledgeMesh/
-├── server/                    # Hub backend (FastAPI + SQLAlchemy)
-│   ├── app/                   # 应用主包（uv run akm-hub 启动）
-│   │   ├── main.py            # FastAPI entry point, WebSocket endpoint
-│   │   ├── __main__.py        # uv run akm-hub [--mcp] 入口
-│   │   ├── config.py          # Settings with pydantic-settings (paths anchored to BASE_DIR)
-│   │   ├── db.py              # Async SQLAlchemy engine/session
-│   │   ├── models/
-│   │   │   ├── document.py    # Document model (id, node_id, path, title, hash, content)
-│   │   │   └── node.py        # Node model (id, name, platform, status, token)
-│   │   ├── services/
-│   │   │   ├── scanner.py     # Recursive Markdown scanner with hash detection
-│   │   │   ├── indexer.py     # Incremental sync (create/update/delete by hash)
-│   │   │   ├── websocket.py   # WS server: register, heartbeat, doc sync
-│   │   │   ├── rag/           # RAG: embeddings (multi-provider) + pgvector store
-│   │   │   └── mcp_server.py  # MCP Server (stdio mode)
-│   │   └── api/
-│   │       ├── __init__.py    # Route aggregation + /stats
-│   │       ├── documents.py   # CRUD + scan trigger
-│   │       ├── search.py      # Keyword search (SQLite LIKE)
-│   │       └── nodes.py       # Node management + remote sync
-│   └── tests/
-│
-├── node/                      # Node client (lightweight)
-│   └── app/                   # 应用主包（uv run akm-node 启动）
-│       ├── __main__.py        # Entry point
-│       ├── config.py          # Node settings (hub_url, knowledge_roots)
-│       ├── transport.py       # WebSocket client (register, heartbeat, doc request)
-│       ├── sync.py            # Document sync (scan + send content)
-│       └── runner.py          # Main loop + heartbeat + reconnect
-│
-├── web/                       # React frontend (Vite + TypeScript)
-│   └── src/
-│       ├── components/
-│       │   ├── Layout.tsx     # Sidebar + resize handle + theme toggle
-│       │   ├── FileTree.tsx   # Collapsible folder tree
-│       │   ├── NodeList.tsx   # Node selector (local + remote)
-│       │   ├── SearchBar.tsx  # Real-time search with dropdown
-│       │   ├── MarkdownViewer.tsx  # react-markdown renderer
-│       │   └── ResizeHandle.tsx    # Draggable sidebar divider
-│       ├── pages/
-│       │   ├── Dashboard.tsx  # Stats + scan button
-│       │   ├── Knowledge.tsx  # Document viewer
-│       │   └── Nodes.tsx      # Node management table
-│       ├── api/client.ts      # Typed API client
-│       └── ThemeContext.tsx    # Dark/Light theme provider
-│
-├── shared/                    # Shared scanner (akm-shared, path dependency)
-│   └── akm_shared/
-│       └── scanner.py         # Unified Markdown scanner used by server + node
-├── Dockerfile                 # Hub image (multi-stage: node build + python)
-├── Dockerfile.node            # Node image
-├── docker-compose.yml         # Hub with SQLite
-├── docker-compose.pg.yml      # Hub with PostgreSQL
-├── docker-compose.node.yml    # Node client
-├── Makefile                   # Dev commands
-└── pyproject.toml             # (unused, see server/ and node/)
+src/
+├── server/   # Hub 后端(FastAPI + SQLAlchemy async;uv run akm-hub [--mcp])
+│   └── app/  # main / config / db / models / services(scanner·indexer·websocket·rag·converters·mcp_server)/ api
+├── node/     # Node 客户端(uv run akm-node):transport / sync / runner / config
+├── web/      # 前端(React18+Vite+TS):components / pages / api/client.ts / ThemeContext
+└── shared/   # akm_shared:统一 Markdown 扫描器(server 与 node 共用)
 ```
 
-## Tech Stack
+细节与职责边界见 [docs/conventions/files.md](docs/conventions/files.md)。
 
-| Layer | Technology | Notes |
-|-------|-----------|-------|
-| Backend | Python 3.11 + FastAPI | Async throughout |
-| Database | SQLite (default) / PostgreSQL | Switch via `AKM_DB_TYPE` |
-| ORM | SQLAlchemy 2.0 (async) | `aiosqlite` or `asyncpg` |
-| Frontend | React 18 + Vite + TypeScript | SPA, dark/light theme |
-| Markdown | react-markdown + remark-gfm | GitHub-flavored rendering |
-| Communication | WebSocket (FastAPI native) | JSON messages |
-| Package Manager | uv | 10-100x faster than pip |
-
-## Development Commands
-
-All Python commands use `uv` for package management.
-
-### Hub (server)
+## 4. 开发命令
 
 ```bash
-cd server
-uv sync                          # Install dependencies
-uv run akm-hub            # Start Hub on :8000
-
-# With PostgreSQL
-uv sync --extra postgres
-AKM_DB_TYPE=postgres uv run akm-hub
+# Hub 后端
+cd src/server && uv sync && uv run akm-hub          # :8000;--mcp 为 stdio 模式
+# 前端
+cd src/web && npm install && npm run dev            # :5173,代理 /api → :8000
+# 节点
+cd src/node && uv sync && uv run akm-node
+# 测试与构建
+cd src/server && uv run pytest
+cd src/web && npm run build
+# 检索评测(可选)
+cd src/server && uv run python eval/run_eval.py
 ```
 
-### Frontend (web)
+配置:复制 `src/server/.env.example` → `.env` 按需修改(数据库/嵌入模型/知识库目录;全变量带 `AKM_` 前缀,清单见 `.env.example` 注释)。
 
-```bash
-cd web
-npm install
-npm run dev                      # Dev server on :5173
-npm run build                    # Build to web/dist/
-```
+## 5. 常用验证目标
 
-### Node Client
+- 扫描:`POST /api/documents/scan` 后查 `/api/documents`
+- 搜索:`GET /api/search?q=`(关键词)、`GET /api/rag/search?q=`(语义/混合)
+- 多节点:Hub + Node 同机起,观察 WS 注册 → 心跳 → `PUT /nodes/{id}/documents`
+- 前端:明暗两主题各过一遍;文案不得硬编码(见 ui.md)
+- 数据库:SQLite 与 PostgreSQL 双路径
 
-```bash
-cd node
-uv sync
-AKM_HUB_URL=ws://localhost:8000/ws AKM_KNOWLEDGE_ROOTS=~/Knowledge uv run akm-node
-```
+## 6. 环境事实(易踩坑)
 
-### Makefile Shortcuts
-
-```bash
-make dev-backend         # Start Hub
-make dev-frontend        # Start frontend
-make dev-node            # Start node client
-make docker-up           # Docker (SQLite)
-make docker-up-pg        # Docker (PostgreSQL)
-make docker-up-node      # Docker (Node)
-make clean               # Remove caches, venv, db
-```
-
-## Configuration
-
-### Hub Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AKM_HOST` | `0.0.0.0` | Server host |
-| `AKM_PORT` | `8000` | Server port |
-| `AKM_DB_TYPE` | `sqlite` | `sqlite` or `postgres` |
-| `AKM_DB_PATH` | `data/agentvault.db` | SQLite path |
-| `AKM_DB_HOST` | `localhost` | PostgreSQL host |
-| `AKM_DB_PORT` | `5432` | PostgreSQL port |
-| `AKM_DB_NAME` | `agentvault` | PostgreSQL database |
-| `AKM_DB_USER` | `postgres` | PostgreSQL user |
-| `AKM_DB_PASSWORD` | | PostgreSQL password |
-| `AKM_KNOWLEDGE_ROOTS` | `~/Knowledge` | Comma-separated directories |
-| `AKM_DEBUG` | `false` | Debug mode |
-
-### Node Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AKM_HUB_URL` | `ws://localhost:8000/ws` | Hub WebSocket URL |
-| `AKM_HUB_API_URL` | `http://localhost:8000/api` | Hub API URL |
-| `AKM_NODE_NAME` | hostname | Node display name |
-| `AKM_KNOWLEDGE_ROOTS` | `~/Knowledge` | Comma-separated directories |
-| `AKM_HEARTBEAT_INTERVAL` | `30` | Seconds between heartbeats |
-
-## WebSocket Protocol
-
-Messages between Hub and Node use JSON:
-
-```json
-// Node → Hub: Register
-{"type": "register", "node_id": "uuid", "name": "MacBook", "platform": "darwin"}
-
-// Hub → Node: Register ACK
-{"type": "register_ack", "node_id": "uuid", "status": "ok"}
-
-// Node → Hub: Heartbeat
-{"type": "heartbeat", "node_id": "uuid"}
-
-// Hub → Node: Heartbeat ACK
-{"type": "heartbeat_ack"}
-
-// Node → Hub: Document update notification
-{"type": "doc_update", "node_id": "uuid", "path": "projects/ai.md", "action": "create"}
-
-// Hub → Node: Request sync
-{"type": "sync_request"}
-
-// Hub → Node: Request document content
-{"type": "doc_request", "path": "projects/ai.md"}
-
-// Node → Hub: Document content response
-{"type": "doc_response", "path": "projects/ai.md", "content": "...", "title": "..."}
-```
-
-## API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/health` | Health check |
-| GET | `/api/stats` | System statistics |
-| GET | `/api/documents` | List documents |
-| GET | `/api/documents/tree` | File tree structure |
-| GET | `/api/documents/:id` | Document detail with content |
-| POST | `/api/documents/scan` | Trigger local scan |
-| GET | `/api/search?q=xxx` | Keyword search |
-| GET | `/api/nodes` | List nodes |
-| GET | `/api/nodes/:id` | Node detail |
-| GET | `/api/nodes/:id/documents` | Node's documents |
-| POST | `/api/nodes/:id/sync` | Request node sync |
-| DELETE | `/api/nodes/:id` | Delete node |
-| WS | `/ws` | WebSocket endpoint |
-
-## Working Guidelines
-
-- Use `uv` for all Python package management (not pip)
-- Keep `.env` for local config only; never commit real secrets
-- Database files (`data/*.db`) are gitignored
-- Frontend builds to `web/dist/` and is served by Hub in production
-- Theme preference is stored in localStorage
-- Sidebar width is stored in localStorage
-- Document hash (SHA256) is used for incremental sync
-- Node ID is auto-generated from hostname if not configured
-
-## Common Verification Targets
-
-- Scanner changes: Test with `POST /api/documents/scan` and verify index
-- Search changes: Test with `GET /api/search?q=xxx`
-- WebSocket changes: Run Hub + Node and verify connection
-- Frontend changes: Check both dark and light themes
-- Database changes: Test with both SQLite and PostgreSQL
+- Windows 下后台/管道运行必须 UTF-8 输出(已在入口统一 reconfigure;新增 print 保持编码安全)
+- 向量库 = PostgreSQL + pgvector(主库为 SQLite 时可独立配置,见 `.env.example` §4)
+- `src/server/.env` 属本机私有配置,不入库;勿把其中密钥写入任何文档/日志

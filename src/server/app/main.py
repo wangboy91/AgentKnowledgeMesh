@@ -6,6 +6,7 @@
     python -m app
 """
 
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,6 +19,13 @@ from app.api import router
 from app.config import BASE_DIR, settings
 from app.db import close_db, init_db
 from app.services.websocket import websocket_endpoint
+
+# Windows 兼容：当 stdout 被重定向（管道/后台服务/CI）且系统编码为 GBK 时，
+# 下面的 emoji 状态打印会触发 UnicodeEncodeError，导致应用启动失败。
+# 统一把输出流重配置为 UTF-8；MCP stdio 模式不经过本模块，不受影响。
+for _stream in (sys.stdout, sys.stderr):
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 @asynccontextmanager

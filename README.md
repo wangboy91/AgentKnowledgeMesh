@@ -1,434 +1,149 @@
 # AgentKnowledgeMesh
 
 > Your distributed memory layer for AI Agents.
+> 面向 AI Agent 时代的分布式知识库:把散落在各台电脑上的 Markdown 文档汇成一个可检索的知识网络,并经 MCP / Context API 供智能体直接取用。
 
-AgentKnowledgeMesh 是一个面向 AI Agent 时代的分布式知识库系统，适用于个人和企业。
+## 功能
 
-## Features
+**已交付(V0.1 – V0.3)**
 
-### V0.1 - 单机知识库
+- 📁 本地 Markdown 递归扫描,hash 增量索引(SQLite / PostgreSQL)
+- 🔍 关键词搜索 + 语义检索:混合检索(dense ⊕ sparse、RRF 融合、Markdown 感知分块)
+- 🌐 Hub + Node 多节点:WebSocket 注册/心跳、文档同步、节点文档向量同步
+- 🖥️ Web 界面:文档浏览/在线编辑、暗色亮色主题、可拖侧边栏
+- 🤖 Context API + MCP Server(stdio / SSE),AI 工具直接接入
+- 📄 文档转换:PDF / Word / HTML / URL → Markdown
 
-- ✅ 递归扫描本地 Markdown 文件
-- ✅ SQLite/PostgreSQL 建立文档索引
-- ✅ Web 界面浏览知识库
-- ✅ Markdown 渲染（GitHub 风格）
-- ✅ 关键词搜索
-- ✅ Docker 一键部署
-- ✅ 暗黑/亮色主题切换
-- ✅ 可拖动侧边栏
+**进行中(V0.4 · 账号与治理)**
 
-### V0.2 - 多节点架构
+- 🔐 账号体系(admin / viewer)+ 全端点鉴权
+- ⌨️ 节点 CLI 登录接入(`akm-node login`),token 可吊销/重置
+- 📦 hash-first 增量同步(只传变更)
+- 🎚️ RAG 同步模式(auto / manual + 文档级勾选)
+- 🌍 界面中英文切换
+- 🌲 知识库三栏树形浏览(节点 → 目录树 → 文档)
+- 🔌 Node 本地 MCP 代理(`akm-node --mcp`,智能体零配置接入)
 
-- ✅ Hub + Node 分布式架构
-- ✅ WebSocket 实时通信
-- ✅ 节点自动注册
-- ✅ 心跳检测
-- ✅ 远程文档访问
-- ✅ 节点管理界面
+完整迭代计划见 [docs/product-overview.md](docs/product-overview.md)。
 
-### V0.3 - Agent 集成
-
-- ✅ Context API（`/api/context`）
-- ✅ MCP Server 集成
-- ✅ 向量搜索 (RAG)
-- ✅ 语义搜索 API
-- ✅ 文档转换 (PDF/Word/HTML → MD)
-- ✅ 在线 Markdown 编辑器
-
-### V1.0 - 高级功能（规划中）
-
-- ⏳ 知识图谱
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Backend | Python 3.11 + FastAPI |
-| Package Manager | uv (10-100x faster than pip) |
-| Database | SQLite / PostgreSQL (switchable) |
-| Frontend | React + Vite + TypeScript |
-| Markdown | react-markdown + remark-gfm |
-| Communication | WebSocket |
-| AI Integration | MCP (Model Context Protocol) |
-
-## Architecture
+## 架构
 
 ```
-                    AgentKnowledgeMesh Hub
-                 (Web + API + WS Server)
-                          |
-                   WebSocket / HTTP
-                          |
-      ----------------------------------------
-      |                    |                 |
-   Node-Mac           Node-Windows       Node-Linux
-   (本地Markdown)      (本地Markdown)     (服务端Markdown)
+                ┌─────────────────────────────┐
+                │   Hub(FastAPI)              │
+                │   Web UI + REST API + WS    │
+                │   关键词⊕语义混合检索          │
+                │   MCP / Context API         │
+                └──────────┬──────────────────┘
+                     WebSocket / HTTP
+        ┌───────────────────┼───────────────────┐
+   Node-Mac            Node-Windows          Node-Linux
+  (本地 Markdown)      (本地 Markdown)       (本地 Markdown)
 ```
 
-## Quick Start
+| 层 | 技术 |
+| --- | --- |
+| Hub 后端 | Python 3.11 + FastAPI + SQLAlchemy(async) |
+| 数据库 | SQLite(零配置)/ PostgreSQL(pgvector 向量) |
+| 前端 | React 18 + Vite + TypeScript |
+| 通信 | WebSocket + HTTP(JSON) |
+| 包管理 | uv(Python)/ npm(前端) |
 
-### Prerequisites
+```
+AgentKnowledgeMesh/
+├── src/server/   # Hub 后端    ├── src/node/   # Node 客户端
+├── src/web/      # React 前端  ├── src/shared/ # 共享扫描器
+├── docs/         # 产品/技术文档与规约
+└── openspec/     # 规范驱动开发工件
+```
 
-- Python 3.11+
-- Node.js 20+
-- [uv](https://docs.astral.sh/uv/) (Python package manager)
+## 快速启动
+
+前置:Python 3.11+、Node.js 20+、[uv](https://docs.astral.sh/uv/)(`curl -LsSf https://astral.sh/uv/install.sh | sh` 或 Windows `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`)。
+
+### 1)Hub 后端
 
 ```bash
-# Install uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-### Docker (Recommended)
-
-```bash
-# 启动 Hub
-KNOWLEDGE_DIR=~/Knowledge docker compose up -d
-
-# 访问
-open http://localhost:8000
-```
-
-### Manual Development
-
-**Hub 端:**
-
-```bash
-# 后端
 cd src/server
 uv sync
-cp .env.example .env   # 按需修改配置（见下方「配置说明」）
-uv run akm-hub
-
-# 前端（另一个终端）
-cd src/web
-npm install
-npm run dev
-
-# 访问
-open http://localhost:5173
+cp .env.example .env    # 零配置可直接用(SQLite + 本地嵌入模型,首次运行下载模型)
+uv run akm-hub          # http://localhost:8000
 ```
 
-**Node 端（另一台机器）:**
+### 2)Web 界面(开发模式)
+
+```bash
+cd src/web
+npm install
+npm run dev             # http://localhost:5173(已代理 /api → :8000)
+```
+
+生产部署:`npm run build` 后把 `dist` 交由 Nginx/Docker 托管(Hub 静态托管目录统一见 docs/technical-design.md §8)。
+
+### 3)节点接入(另一台电脑)
 
 ```bash
 cd src/node
 uv sync
-cp .env.example .env   # 配置 Hub 地址和本地知识库目录
-
-# 启动
-uv run akm-node
+cp .env.example .env    # 配置 AKM_HUB_URL 与 AKM_KNOWLEDGE_ROOTS
+uv run akm-node         # 自动注册并同步本地文档
 ```
 
-## 配置说明
+> V0.4 后节点接入将改为 `akm-node login` 登录制(见下「使用说明」)。
 
-所有配置通过环境变量管理，两个组件各有一份模板：
-
-| 组件 | 模板文件 | 说明 |
-|---|---|---|
-| Server (Hub) | `src/server/.env.example` | 数据库、向量库、嵌入模型、知识库目录 |
-| Node | `src/node/.env.example` | Hub 地址、本地知识库目录 |
-
-复制模板后按需修改，`.env` 已被 gitignore，密钥不会提交：
+### Docker
 
 ```bash
-cd src/server && cp .env.example .env
+KNOWLEDGE_DIR=~/Knowledge docker compose up -d        # Hub(SQLite)
+docker compose -f docker-compose.pg.yml up -d         # Hub(PostgreSQL)
+docker compose -f docker-compose.node.yml up -d       # Node
 ```
 
-**零配置即可启动**：默认使用 SQLite + 本地嵌入模型（首次运行会下载模型）。
-需要以下能力时再改配置：
+## 使用说明
 
-- **PostgreSQL 存储**：`AKM_DB_TYPE=postgres` + 连接信息（向量表自动同库存放）
-- **中文语义搜索效果更好**：`AKM_EMBEDDING_PROVIDER=ark` + 火山引擎 API Key
-- **指定知识库目录**：`AKM_KNOWLEDGE_ROOTS=/path/to/docs`（多个用逗号分隔）
-
-Or use Makefile:
-
-```bash
-make dev-backend   # Start Hub backend
-make dev-frontend  # Start frontend
-make dev-node      # Start node client
-```
-
-## MCP Server 集成
-
-AgentKnowledgeMesh 支持 MCP (Model Context Protocol)，让 AI 工具可以直接访问知识库。
-
-### 配置 Claude Code
-
-在项目根目录创建 `.claude/mcp.json`：
+- **浏览知识库**:Web 首页看统计;知识库页选节点 → 浏览目录树 → 点开文档渲染(三栏树形为 V0.4 规划)
+- **搜索**:顶栏实时搜索 = 关键词检索;语义检索走 `/api/rag/search`(或界面检索入口)
+- **文档进 RAG**:当前节点文档自动入向量库,本地扫描的文档用 `POST /api/rag/index` 重建;V0.4 将支持 auto/manual 模式与文档级勾选
+- **AI 工具接入(MCP)**:推荐方式 —— 机器上装有节点时,智能体直接用本地节点做 MCP 入口(免配 Hub 地址与凭证):
 
 ```json
 {
   "mcpServers": {
     "agentknowledge": {
       "command": "uv",
-      "args": ["run", "akm-hub", "--mcp"],
-      "cwd": "src/server"
+      "args": ["run", "akm-node", "--mcp"],
+      "cwd": "src/node"
     }
   }
 }
 ```
 
-或使用 HTTP 模式：
+远程/无节点机器用 Hub:SSE 模式 `"url": "http://localhost:8000/api/mcp/sse"`(V0.4 起需 API Token),或 Hub 本机 stdio 模式 `"command": "uv", "args": ["run", "akm-hub", "--mcp"]`。可用工具:`search_documents` / `get_document` / `list_documents`。测试:`npx @modelcontextprotocol/inspector http://localhost:8000/api/mcp/sse`。
 
-```json
-{
-  "mcpServers": {
-    "agentknowledge": {
-      "url": "http://localhost:8000/api/mcp/sse"
-    }
-  }
-}
-```
+- **Agent 检索接口**:`GET /api/context?q=xxx`(V0.4 起需 API Token)
+- **节点接入(V0.4 规划)**:`uv run akm-node login` 输入账号密码 → 换取节点 token → 无头常驻;Web 端可吊销/重置
 
-### 可用工具
+## 配置
 
-| 工具 | 描述 |
-|------|------|
-| `search_documents` | 搜索知识库文档 |
-| `get_document` | 获取文档详情 |
-| `list_documents` | 列出文档列表 |
+两个组件各有一份模板:`src/server/.env.example`、`src/node/.env.example`,复制为 `.env` 后按需修改。常用项:
 
-### 测试 MCP
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `AKM_PORT` | `8000` | Hub 端口 |
+| `AKM_DB_TYPE` | `sqlite` | `sqlite` / `postgres` |
+| `AKM_KNOWLEDGE_ROOTS` | `~/Knowledge` | 知识库目录(逗号分隔多个) |
+| `AKM_EMBEDDING_PROVIDER` | 模板内 `local` | `local`(离线)/ `ark`(火山引擎,中文更好) |
+| `AKM_HUB_URL`(node) | `ws://localhost:8000/ws` | Hub 地址 |
 
-```bash
-# 使用 MCP Inspector
-npx @modelcontextprotocol/inspector http://localhost:8000/api/mcp/sse
-```
+完整配置与混合检索调优参数见模板文件内注释。
 
-## API Endpoints
+## 文档索引
 
-### Documents
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/documents` | Document list |
-| GET | `/api/documents/tree` | File tree structure |
-| GET | `/api/documents/:id` | Document detail |
-| POST | `/api/documents/scan` | Trigger scan |
-
-### Search
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/search?q=xxx` | Search documents |
-
-### Context (for AI Agents)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/context?q=xxx` | Get context for AI prompt |
-
-### Nodes
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/nodes` | Node list |
-| GET | `/api/nodes/:id` | Node detail |
-| GET | `/api/nodes/:id/documents` | Node documents |
-| PUT | `/api/nodes/:id/documents` | Upload node documents (Bearer token) |
-| POST | `/api/nodes/:id/sync` | Request sync |
-| DELETE | `/api/nodes/:id` | Delete node |
-
-### RAG (Vector Search)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/rag/search?q=xxx` | Semantic search |
-| GET | `/api/rag/context?q=xxx` | RAG context for AI |
-| POST | `/api/rag/index` | Index all documents |
-| GET | `/api/rag/stats` | Vector store stats |
-
-### Document Conversion
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/convert/upload` | Upload and convert file |
-| POST | `/api/convert/url` | Convert from URL |
-
-Supported formats: PDF, DOCX, HTML
-
-### MCP
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/mcp/sse` | MCP SSE endpoint |
-| POST | `/api/mcp/messages` | MCP messages endpoint |
-
-### System
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/stats` | System stats |
-| GET | `/api/health` | Health check |
-| WS | `/ws` | WebSocket endpoint |
-
-## Project Structure
-
-```
-AgentKnowledgeMesh/
-├── src/
-│   ├── server/            # Hub backend (FastAPI)
-│   │   ├── app/           # 应用主包（uv run akm-hub 启动）
-│   │   │   ├── main.py    # FastAPI 入口 + lifespan
-│   │   │   ├── config.py  # 配置（路径锚定项目根，CWD 无关）
-│   │   │   ├── db.py      # 数据库连接
-│   │   │   ├── models/    # SQLAlchemy models
-│   │   │   ├── services/  # 业务逻辑
-│   │   │   │   ├── scanner.py
-│   │   │   │   ├── indexer.py
-│   │   │   │   ├── websocket.py
-│   │   │   │   ├── rag/   # RAG 子域（embeddings + vector_store）
-│   │   │   │   ├── converters/  # 文档转换（PDF/Word/HTML/URL）
-│   │   │   │   └── mcp_server.py  # MCP Server
-│   │   │   └── api/       # REST API handlers
-│   │   │       ├── documents.py
-│   │   │       ├── search.py
-│   │   │       ├── rag.py
-│   │   │       ├── nodes.py
-│   │   │       ├── context.py
-│   │   │       └── mcp.py
-│   │   ├── tests/         # 测试
-│   │   ├── .env           # 环境变量（不入库）
-│   │   └── pyproject.toml
-│   ├── shared/            # Shared scanner (akm-shared)
-│   │   └── akm_shared/
-│   │       └── scanner.py
-│   ├── node/              # Node client
-│   │   └── app/           # 应用主包（uv run akm-node 启动）
-│   │       ├── __main__.py
-│   │       ├── config.py
-│   │       ├── transport.py
-│   │       ├── sync.py
-│   │       └── runner.py
-│   └── web/               # React frontend
-│       └── src/
-│           ├── components/
-│           ├── pages/
-│           └── api/
-├── openspec/              # OpenSpec documentation
-├── AGENTS.md              # AI Agent guide
-├── README.md
-├── .gitignore
-├── Makefile
-├── Dockerfile
-├── Dockerfile.node
-├── docker-compose.yml
-├── docker-compose.pg.yml
-└── docker-compose.node.yml
-```
-
-## Configuration
-
-### Hub Configuration
-
-Environment variables (prefix `AKM_`):
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AKM_HOST` | `0.0.0.0` | Server host |
-| `AKM_PORT` | `8000` | Server port |
-| `AKM_DB_TYPE` | `sqlite` | Database type: `sqlite` or `postgres` |
-| `AKM_DB_PATH` | `data/agentvault.db` | SQLite database path |
-| `AKM_KNOWLEDGE_ROOTS` | `~/Knowledge` | Knowledge directories (comma-separated) |
-| `AKM_DEBUG` | `false` | Debug mode |
-
-### RAG / 混合检索配置
-
-语义检索采用 **dense 向量 ⊕ sparse 关键词** 的混合检索，文档级 RRF 融合，分块为 Markdown 感知（标题层级切分、代码块/表格原子保护、token 计数 + 句级重叠）。
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AKM_CHUNK_SIZE` | `512` | 分块目标 token 数（中文逐字 + 英文逐词） |
-| `AKM_CHUNK_OVERLAP` | `64` | 相邻块重叠 token 数 |
-| `AKM_SEARCH_MIN_SCORE` | `0.2` | dense 侧相似度阈值（低于此值丢弃） |
-| `AKM_SEARCH_RRF_K` | `60` | RRF 融合常数 k |
-| `AKM_SEARCH_CHUNKS_PER_DOC` | `2` | 每文档最多返回的分块数 |
-| `AKM_SEARCH_CANDIDATE_LIMIT` | `50` | dense/sparse 各自候选分块数 |
-| `AKM_SEARCH_DENSE_WEIGHT` | `1.0` | RRF 中 dense 权重（主导） |
-| `AKM_SEARCH_SPARSE_WEIGHT` | `0.3` | RRF 中 sparse 权重（温和补充） |
-
-### Node Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AKM_HUB_URL` | `ws://localhost:8000/ws` | Hub WebSocket URL |
-| `AKM_HUB_API_URL` | `http://localhost:8000/api` | Hub API URL |
-| `AKM_NODE_NAME` | Auto (hostname) | Node display name |
-| `AKM_KNOWLEDGE_ROOTS` | `~/Knowledge` | Knowledge directories |
-| `AKM_HEARTBEAT_INTERVAL` | `30` | Heartbeat interval (seconds) |
-
-### Multiple Knowledge Directories
-
-```bash
-# 单目录
-AKM_KNOWLEDGE_ROOTS=/Users/me/obsidian-doc
-
-# 多目录（逗号分隔）
-AKM_KNOWLEDGE_ROOTS=/Users/me/obsidian-doc,/Users/me/projects/docs
-```
-
-### Database Switching
-
-**SQLite (default)** - zero config:
-
-```bash
-AKM_DB_TYPE=sqlite AKM_DB_PATH=data/agentvault.db
-```
-
-**PostgreSQL** - for production:
-
-```bash
-cd src/server && uv sync --extra postgres
-export AKM_DB_TYPE=postgres
-export AKM_DB_HOST=localhost
-export AKM_DB_PASSWORD=your_password
-```
-
-Docker with PostgreSQL:
-
-```bash
-docker compose -f docker-compose.pg.yml up -d
-```
-
-## Docker Deployment
-
-### Hub
-
-```bash
-# SQLite mode (default)
-docker compose up -d
-
-# PostgreSQL mode
-docker compose -f docker-compose.pg.yml up -d
-```
-
-### Node
-
-```bash
-# 连接到本地 Hub
-docker compose -f docker-compose.node.yml up -d
-
-# 连接到远程 Hub
-AKM_HUB_URL=ws://hub-ip:8000/ws docker compose -f docker-compose.node.yml up -d
-```
-
-## Retrieval Evaluation
-
-检索质量可用离线评测脚本对比新旧方案，输出 `recall@k` 与 `nDCG@10` 均值：
-
-```bash
-cd src/server
-uv run python eval/run_eval.py            # 默认 eval/dataset.jsonl，k=5
-uv run python eval/run_eval.py --k 10     # 自定义 k
-```
-
-数据集 `src/server/eval/dataset.jsonl` 为手工标注的 JSONL，每行 `query / relevant_doc_ids / node_id`，可自行扩展。脚本会先跑「旧基线（dense 单 chunk）」再跑「新混合检索」，输出对比表；改后指标低于基线时会以非零退出码告警。
-
-## Roadmap
-
-- V0.3: ✅ Agent Context API, ✅ MCP Server
-- V1.0: ⏳ Knowledge Graph, ⏳ Vector search (RAG), ⏳ Document conversion, ⏳ Online editor
+- [docs/product-overview.md](docs/product-overview.md) — 产品概要与迭代计划
+- [docs/technical-design.md](docs/technical-design.md) — 当前批次技术方案
+- [docs/api-reference.md](docs/api-reference.md) — API 参考
+- [docs/conventions/](docs/conventions/) — UI / 流程 / 文件规范
+- [AGENTS.md](AGENTS.md) — 工程规约地图(AI 会话入口)
 
 ## License
 

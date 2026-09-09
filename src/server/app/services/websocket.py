@@ -27,8 +27,7 @@ class ConnectionManager:
         self.connection_nodes: Dict[WebSocket, str] = {}
 
     async def connect(self, websocket: WebSocket, node_id: str):
-        """接受连接."""
-        await websocket.accept()
+        """登记连接（accept 由 websocket_endpoint 统一执行，避免二次 accept）."""
         self.active_connections[node_id] = websocket
         self.connection_nodes[websocket] = node_id
         print(f"✅ Node connected: {node_id}")
@@ -171,6 +170,10 @@ async def websocket_endpoint(websocket: WebSocket):
     """WebSocket 端点."""
     node_id = None
     try:
+        # Starlette 要求先 accept 才能收发消息，否则 receive_json 会抛
+        # RuntimeError('WebSocket is not connected...')，导致握手被拒(500)
+        await websocket.accept()
+
         # 等待注册消息
         data = await websocket.receive_json()
         response = await handle_node_message(websocket, data)
