@@ -95,30 +95,27 @@ async def handle_register(websocket: WebSocket, message: dict) -> dict:
     node_id = message.get("node_id")
     name = message.get("name", "Unknown")
     platform = message.get("platform", "unknown")
+    token = message.get("token")
 
     if not node_id:
         return {"type": "error", "message": "Missing node_id"}
 
+    # 节点凭证校验:必须携带 token、节点已存在(经 akm-node login 创建)、
+    # token 与记录一致且节点未被禁用;失败返回 error,端点将以 4001 关闭连接
+    if not token:
+        return {"type": "error", "message": "Missing node token (run 'akm-node login' first)"}
+
     async with async_session() as session:
-        # 查找或创建节点
         result = await session.execute(select(Node).where(Node.id == node_id))
         node = result.scalar_one_or_none()
 
-        if not node:
-            node = Node(
-                id=node_id,
-                name=name,
-                platform=platform,
-                status="online",
-                last_heartbeat=datetime.utcnow(),
-            )
-            session.add(node)
-        else:
-            node.name = name
-            node.platform = platform
-            node.status = "online"
-            node.last_heartbeat = datetime.utcnow()
+        if node is None or node.token != token or node.disabled:
+            return {"type": "error", "message": "Invalid node credentials"}
 
+        node.name = name
+        node.platform = platform
+        node.status = "online"
+        node.last_heartbeat = datetime.utcnow()
         await session.commit()
 
     # 注册到连接管理器
@@ -164,6 +161,20 @@ async def handle_node_disconnect(node_id: str):
         if node:
             node.status = "offline"
             await session.commit()
+
+
+async def reset_all_nodes_offline() -> None:
+    """Hub 启动时重置全部节点为离线.
+
+    进程内不存在任何活跃连接;若上次进程被强杀,断线清理未执行,
+    DB 中会残留 status='online' 的陈旧记录,在此统一纠正。
+    """
+    async with async_session() as session:
+        result = await session.execute(select(Node).where(Node.status == "online"))
+        nodes = result.scalars().all()
+        for node in nodes:
+            node.status = "offline"
+        await session.commit()
 
 
 async def websocket_endpoint(websocket: WebSocket):

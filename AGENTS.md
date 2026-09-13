@@ -4,7 +4,7 @@
 
 ## 1. 项目一句话
 
-AgentKnowledgeMesh 是面向 AI Agent 时代的分布式知识库(Hub + Node):多机 Markdown 汇聚、关键词⊕语义混合检索、MCP / Context API 接入。它是上层产品的知识与记忆基座,兼公司内网 wiki。
+AgentKnowledgeMesh 是一个**独立项目**:面向 AI Agent 时代的分布式知识库(Hub + Node)—— 多机 Markdown 汇聚、关键词⊕语义混合检索、MCP / Context API 接入。可独立部署为团队/企业内网知识库,也可作为知识组件被上层应用集成。
 
 ## 2. 规约地图
 

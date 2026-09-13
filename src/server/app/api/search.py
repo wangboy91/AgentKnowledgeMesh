@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.models.document import Document
+from app.services.auth import require_auth
 
 router = APIRouter()
 
@@ -17,6 +18,7 @@ router = APIRouter()
 async def search_documents(
     q: str = Query(..., min_length=1, description="搜索关键词"),
     limit: int = Query(20, ge=1, le=100, description="返回数量"),
+    principal=Depends(require_auth("viewer", allow_node=True)),
     session: AsyncSession = Depends(get_session),
 ):
     """关键词搜索文档.

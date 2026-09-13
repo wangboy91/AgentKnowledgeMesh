@@ -21,6 +21,27 @@ for _stream in (sys.stdout, sys.stderr):
 
 def main():
     """启动 Node 客户端."""
+    # 登录子命令(account-auth):akm-node login
+    if "login" in sys.argv:
+        from app.login import run_login
+
+        sys.exit(run_login())
+
+    # 无凭证时拒绝启动(不再支持匿名接入)
+    if not settings.node_token:
+        print("❌ 节点尚未接入:请先执行 `uv run akm-node login` 完成登录(account-auth)")
+        sys.exit(1)
+
+    # 本地 MCP 代理模式:智能体拉起子进程,stdio 提供与 Hub 同名的三个工具;
+    # 单职责短生命周期进程,不启动同步循环
+    if "--mcp" in sys.argv:
+        import asyncio
+
+        from app.mcp_proxy import run_mcp_proxy
+
+        asyncio.run(run_mcp_proxy())
+        return
+
     print("=" * 50)
     print("🔐 AgentKnowledgeMesh Node v0.2.0")
     print("=" * 50)

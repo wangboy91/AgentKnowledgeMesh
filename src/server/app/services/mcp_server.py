@@ -13,6 +13,13 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from sqlalchemy import select, or_
 
+from akm_shared.mcp_formatting import (
+    format_document_detail,
+    format_document_list,
+    format_search_results,
+    format_semantic_search,
+)
+
 from app.db import async_session
 from app.models.document import Document
 
@@ -22,13 +29,19 @@ async def handle_list_tools(ctx, params) -> types.ListToolsResult:
     return types.ListToolsResult(tools=[
         types.Tool(
             name="search_documents",
-            description="搜索知识库中的文档。支持关键词搜索，返回相关文档列表。",
+            description="搜索知识库中的文档。支持关键词搜索与语义检索(mode=semantic)，返回相关文档列表。",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
                         "description": "搜索关键词"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": "检索方式：keyword(默认，关键词) / semantic(语义，向量检索)",
+                        "enum": ["keyword", "semantic"],
+                        "default": "keyword"
                     },
                     "limit": {
                         "type": "integer",
@@ -82,7 +95,8 @@ async def handle_call_tool(ctx, params: types.CallToolRequest) -> types.CallTool
     if name == "search_documents":
         return await _search_documents(
             query=arguments["query"],
-            limit=arguments.get("limit", 5)
+            limit=arguments.get("limit", 5),
+            mode=arguments.get("mode", "keyword"),
         )
     elif name == "get_document":
         return await _get_document(
@@ -97,8 +111,31 @@ async def handle_call_tool(ctx, params: types.CallToolRequest) -> types.CallTool
         raise ValueError(f"Unknown tool: {name}")
 
 
-async def _search_documents(query: str, limit: int) -> types.CallToolResult:
-    """搜索文档."""
+async def _search_documents(query: str, limit: int, mode: str = "keyword") -> types.CallToolResult:
+    """搜索文档.
+
+    keyword:文档表 LIKE 检索;semantic:dense+sparse 混合向量检索(质量由 Hub 保证)。
+    """
+    if mode == "semantic":
+        from app.services.rag import vector_store
+
+        try:
+            # 仅召回 rag_status 为 indexed 的文档(与 /api/rag/search 一致)
+            async with async_session() as session:
+                stmt = select(Document.id).where(Document.rag_status != "indexed")
+                excluded = {row[0] for row in (await session.execute(stmt)).all()}
+            results = vector_store.search_hybrid(
+                query=query, limit=limit, excluded_doc_ids=excluded,
+            )
+        except Exception as e:
+            return types.CallToolResult(content=[
+                types.TextContent(type="text", text=f"语义检索失败:{e}")
+            ], isError=True)
+        text = format_semantic_search(query, results)
+        return types.CallToolResult(content=[
+            types.TextContent(type="text", text=text)
+        ])
+
     pattern = f"%{query}%"
 
     async with async_session() as session:
@@ -111,7 +148,11 @@ async def _search_documents(query: str, limit: int) -> types.CallToolResult:
                     Document.content.ilike(pattern)
                 )
             )
-            .order_by(Document.title.ilike(pattern).desc())
+            .order_by(
+                # 标题匹配优先,更新时间次序(与 /api/search 保持一致,三形态输出稳定)
+                Document.title.ilike(pattern).desc(),
+                Document.updated_at.desc(),
+            )
             .limit(limit)
         )
         result = await session.execute(stmt)
@@ -122,18 +163,10 @@ async def _search_documents(query: str, limit: int) -> types.CallToolResult:
             types.TextContent(type="text", text=f"未找到与 '{query}' 相关的文档。")
         ])
 
-    # 格式化结果
-    lines = [f"找到 {len(documents)} 个相关文档：\n"]
-    for doc in documents:
-        lines.append(f"## {doc.title}")
-        lines.append(f"- 路径: {doc.path}")
-        lines.append(f"- 节点: {doc.node_id}")
-        lines.append(f"- 大小: {doc.size / 1024:.1f} KB")
-        lines.append(f"- 更新: {doc.updated_at}")
-        lines.append("")
-
+    # 格式化逻辑单源共享(与节点本地代理输出一致)
+    docs = [doc.to_dict(include_content=False) for doc in documents]
     return types.CallToolResult(content=[
-        types.TextContent(type="text", text="\n".join(lines))
+        types.TextContent(type="text", text=format_search_results(query, docs))
     ])
 
 
@@ -147,20 +180,8 @@ async def _get_document(document_id: int) -> types.CallToolResult:
             types.TextContent(type="text", text=f"文档 ID {document_id} 不存在。")
         ])
 
-    content = f"""# {doc.title}
-
-**路径**: {doc.path}
-**节点**: {doc.node_id}
-**大小**: {doc.size / 1024:.1f} KB
-**更新时间**: {doc.updated_at}
-
----
-
-{doc.content or '(空文档)'}
-"""
-
     return types.CallToolResult(content=[
-        types.TextContent(type="text", text=content)
+        types.TextContent(type="text", text=format_document_detail(doc.to_dict(include_content=True)))
     ])
 
 
@@ -181,12 +202,9 @@ async def _list_documents(node_id: str | None, limit: int) -> types.CallToolResu
             types.TextContent(type="text", text="暂无文档。")
         ])
 
-    lines = [f"文档列表（共 {len(documents)} 个）：\n"]
-    for doc in documents:
-        lines.append(f"- [{doc.id}] {doc.title} ({doc.path})")
-
+    docs = [doc.to_dict(include_content=False) for doc in documents]
     return types.CallToolResult(content=[
-        types.TextContent(type="text", text="\n".join(lines))
+        types.TextContent(type="text", text=format_document_list(docs))
     ])
 
 

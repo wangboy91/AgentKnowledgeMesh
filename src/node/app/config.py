@@ -30,6 +30,10 @@ class NodeSettings(BaseSettings):
     node_name: str = Field(
         "",
     )
+    # 节点凭证(account-auth):由 `akm-node login` 写入本地 .env
+    node_token: str = Field(
+        "",
+    )
 
     # 知识库目录
     knowledge_roots: str = Field(

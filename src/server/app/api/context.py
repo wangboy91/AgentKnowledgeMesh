@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.models.document import Document
+from app.services.auth import require_auth
 
 router = APIRouter()
 
@@ -19,6 +20,7 @@ async def get_context(
     q: str = Query(..., min_length=1, description="查询关键词"),
     limit: int = Query(5, ge=1, le=20, description="返回文档数量"),
     node_id: str | None = Query(None, description="指定节点ID"),
+    principal=Depends(require_auth("viewer", allow_node=True)),
     session: AsyncSession = Depends(get_session),
 ):
     """获取与查询相关的文档上下文.

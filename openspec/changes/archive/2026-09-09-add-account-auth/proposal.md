@@ -30,5 +30,5 @@
 - **node**:新增 `login` 子命令与本地凭证存储(`.env`);启动注册携带 token
 - **web**:登录页、请求层鉴权头与 401/403 处理、按角色隐藏写入口、节点管理页新增 token 重置/禁用
 - **依赖**:新增密码哈希与 JWT 库(见 design)
-- **契约**:Context API / MCP SSE 新增鉴权要求,合入前需在 `company/architecture/platform-contracts.md` 登记
+- **契约**:Context API / MCP SSE 新增鉴权要求,已同步 `docs/api-reference.md`(对外契约以本仓文档为准)
 - **兼容**:已部署的旧节点升级后须执行 `akm-node login` 重新接入;使用 Context API / MCP 的智能体须改配 API Token

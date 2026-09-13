@@ -91,10 +91,10 @@ def test_search_hybrid_threshold_filters_low_dense(monkeypatch):
 
     monkeypatch.setattr(settings, "search_min_score", 0.2)
 
-    def fake_dense(query, node_id=None, candidate_limit=None):
+    def fake_dense(query, node_id=None, candidate_limit=None, excluded_doc_ids=None):
         return [_mk("low", 9, 0.05)]
 
-    def fake_sparse(query, node_id=None, candidate_limit=None):
+    def fake_sparse(query, node_id=None, candidate_limit=None, excluded_doc_ids=None):
         return []
 
     monkeypatch.setattr(vector_store, "ensure_table", lambda: None)
@@ -113,14 +113,14 @@ def test_search_hybrid_multi_chunk_and_rrf(monkeypatch):
     monkeypatch.setattr(settings, "search_chunks_per_doc", 2)
     monkeypatch.setattr(settings, "search_candidate_limit", 50)
 
-    def fake_dense(query, node_id=None, candidate_limit=None):
+    def fake_dense(query, node_id=None, candidate_limit=None, excluded_doc_ids=None):
         return [
             _mk("c1", 1, 0.9),
             _mk("c2", 2, 0.5),
             _mk("c1b", 1, 0.1),  # 低于阈值，dense 侧被过滤
         ]
 
-    def fake_sparse(query, node_id=None, candidate_limit=None):
+    def fake_sparse(query, node_id=None, candidate_limit=None, excluded_doc_ids=None):
         return [
             _mk("c1b", 1, 2),  # sparse 精确命中把 c1b 捞回
             _mk("c3", 3, 1),

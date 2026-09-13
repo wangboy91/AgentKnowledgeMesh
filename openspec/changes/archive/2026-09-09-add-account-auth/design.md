@@ -19,7 +19,7 @@
 
 ## Decisions
 
-1. **密码哈希用 `passlib[bcrypt]`**。备选:`hashlib.pbkdf2_hmac` 自实现(无新依赖,但轮 iterations/格式管理自己担)。若 bcrypt 依赖在目标环境安装受阻,降级 pbkdf2,接口不变(`hash_password` / `verify_password` 两函数隔离)。
+1. **密码哈希选型结论(实现期定稿)**:直接用标准库 `hashlib.pbkdf2_hmac`(SHA256,210k 迭代,格式 `$akm-pbkdf2$<iter>$<salt>$<hash>`),**不引入 passlib/bcrypt** —— 规避 passlib 1.7.4 与 bcrypt 4.x 的版本读取兼容问题,零额外依赖;接口仍为 `hash_password` / `verify_password`,后续要换 bcrypt 只动这一个模块。JWT 用 `PyJWT`(纯 Python)。
 2. **会话用 JWT(HS256,`pyjwt`)**,密钥 `AKM_SECRET_KEY` 未配置时首启生成 32 字节随机值存 `data/secret.key`(0600)。备选:服务端 session 表(每请求查库,弃)。
 3. **统一凭证解析依赖** `resolve_principal`:按序识别 JWT(用户)/ API Token(哈希比对)/ 节点 token(仅 `PUT /api/nodes/{id}/documents`、只读知识端点白名单与 WS 注册),返回 `(principal_type, role)`;各路由用 `require_auth(min_role)` 包装。避免每路由自行解析。
 4. **node token 沿用 `nodes.token` 字段**,不另建表;重置 = 覆盖该字段,禁用 = `status="disabled"`(与在线状态 online/offline 解耦,新增字段 `disabled` bool 更清晰,选后者)。
@@ -28,7 +28,7 @@
 
 ## Risks / Trade-offs
 
-- [既有 MCP/Context 集成全断] → API Token 先行:发布说明引导生成 token 替换;`platform-contracts.md` 登记新鉴权要求
+- [既有 MCP/Context 集成全断] → API Token 先行:发布说明引导生成 token 替换;`docs/api-reference.md` 同步新鉴权要求
 - [JWT 泄漏] → 24h 短有效期;生产部署建议 HTTPS(文档说明)
 - [忘记 admin 密码] → `reset-password` 本机命令兜底
 - [全端点上锁后测试面扩大] → 鉴权矩阵参数化测试逐组覆盖(见 tasks)

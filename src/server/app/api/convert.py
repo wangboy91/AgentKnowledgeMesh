@@ -8,10 +8,11 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from pydantic import BaseModel
 
 from app.config import settings
+from app.services.auth import require_auth
 from app.services.converters import convert_pdf, convert_docx, convert_html, convert_url
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,10 @@ class ConvertResponse(BaseModel):
 
 
 @router.post("/upload", response_model=ConvertResponse)
-async def upload_and_convert(file: UploadFile = File(...)):
+async def upload_and_convert(
+    file: UploadFile = File(...),
+    principal=Depends(require_auth("admin")),
+):
     """上传文件并转换为 Markdown.
 
     支持格式：PDF, DOCX, HTML
@@ -107,7 +111,10 @@ async def upload_and_convert(file: UploadFile = File(...)):
 
 
 @router.post("/url", response_model=ConvertResponse)
-async def convert_from_url(request: UrlRequest):
+async def convert_from_url(
+    request: UrlRequest,
+    principal=Depends(require_auth("admin")),
+):
     """从 URL 抓取网页并转换为 Markdown."""
     try:
         # 转换

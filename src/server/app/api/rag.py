@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db import get_session
 from app.models.document import Document
+from app.services.auth import require_auth
 from app.services.rag import vector_store
 
 logger = logging.getLogger(__name__)
@@ -18,21 +19,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def _excluded_ids(session) -> set[int]:
+    """RAG 排除集:rag_status 非 indexed 的文档 id(语义检索/上下文不召回)."""
+    result = await session.execute(
+        select(Document.id).where(Document.rag_status != "indexed")
+    )
+    return {row[0] for row in result.all()}
+
+
 @router.get("/search")
 async def semantic_search(
     q: str = Query(..., min_length=1, description="查询文本"),
     limit: int = Query(5, ge=1, le=20, description="返回数量"),
     node_id: str | None = Query(None, description="节点 ID 过滤"),
+    principal=Depends(require_auth("viewer", allow_node=True)),
+    session: AsyncSession = Depends(get_session),
 ):
     """语义搜索.
 
-    使用混合检索（dense 向量 ⊕ sparse 关键词，RRF 融合）搜索相关分块。
+    使用混合检索（dense 向量 ⊕ sparse 关键词，RRF 融合）搜索相关分块;
+    仅召回 rag_status 为 indexed 的文档。
     """
     try:
+        excluded = await _excluded_ids(session)
         results = vector_store.search_hybrid(
             query=q,
             limit=limit,
             node_id=node_id,
+            excluded_doc_ids=excluded,
         )
 
         return {
@@ -55,6 +69,7 @@ async def get_rag_context(
     q: str = Query(..., min_length=1, description="查询文本"),
     limit: int = Query(3, ge=1, le=10, description="返回文档数量"),
     node_id: str | None = Query(None, description="节点 ID 过滤"),
+    principal=Depends(require_auth("viewer", allow_node=True)),
     session: AsyncSession = Depends(get_session),
 ):
     """获取 RAG 上下文.
@@ -65,10 +80,12 @@ async def get_rag_context(
         # 混合检索（可能同一文档命中多个 chunk）
         # 为凑满 limit 个不同文档，多取候选再按 doc_id 去重
         fetch_limit = limit * settings.search_chunks_per_doc
+        excluded = await _excluded_ids(session)
         search_results = vector_store.search_hybrid(
             query=q,
             limit=fetch_limit,
             node_id=node_id,
+            excluded_doc_ids=excluded,
         )
 
         if not search_results:
@@ -125,6 +142,7 @@ async def get_rag_context(
 
 @router.post("/index")
 async def index_documents(
+    principal=Depends(require_auth("admin")),
     session: AsyncSession = Depends(get_session),
 ):
     """索引所有文档到向量存储.
@@ -132,8 +150,8 @@ async def index_documents(
     扫描数据库中的所有文档，生成向量并存储。
     """
     try:
-        # 获取所有文档
-        stmt = select(Document)
+        # 获取所有文档(excluded 的文档不参与全量索引)
+        stmt = select(Document).where(Document.rag_status != "excluded")
         result = await session.execute(stmt)
         documents = result.scalars().all()
 
@@ -166,7 +184,7 @@ async def index_documents(
 
 
 @router.get("/stats")
-async def get_vector_stats():
+async def get_vector_stats(principal=Depends(require_auth("viewer", allow_node=True))):
     """获取向量存储统计."""
     try:
         stats = vector_store.get_stats()

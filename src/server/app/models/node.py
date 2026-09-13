@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Optional
 import uuid
 
-from sqlalchemy import String, DateTime, func
+from sqlalchemy import Boolean, String, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -30,6 +30,7 @@ class Node(Base):
     platform: Mapped[str] = mapped_column(String(32), nullable=False)  # darwin/windows/linux
     ip: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="offline")  # online/offline
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # 禁用后拒绝注册与上传
     token: Mapped[str] = mapped_column(String(64), unique=True, default=lambda: uuid.uuid4().hex)
     last_heartbeat: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -43,6 +44,7 @@ class Node(Base):
             "platform": self.platform,
             "ip": self.ip,
             "status": self.status,
+            "disabled": self.disabled,
             "last_heartbeat": self.last_heartbeat.isoformat() if self.last_heartbeat else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

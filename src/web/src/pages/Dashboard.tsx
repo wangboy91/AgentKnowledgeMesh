@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
-import { api, SystemStats, ScanStats, VectorStats, RagIndexResponse } from '../api/client'
+import { useTranslation } from 'react-i18next'
+import { api, isAdmin, SystemStats, ScanStats, VectorStats, RagIndexResponse } from '../api/client'
 
 export default function Dashboard() {
+  const { t } = useTranslation()
   const [stats, setStats] = useState<SystemStats | null>(null)
   const [vectorStats, setVectorStats] = useState<VectorStats | null>(null)
   const [scanning, setScanning] = useState(false)
   const [indexing, setIndexing] = useState(false)
   const [lastScan, setLastScan] = useState<ScanStats | null>(null)
   const [lastIndex, setLastIndex] = useState<RagIndexResponse | null>(null)
+  const admin = isAdmin()
 
   useEffect(() => {
     loadStats()
@@ -60,62 +63,64 @@ export default function Dashboard() {
 
   return (
     <div className="dashboard">
-      <h2 style={{ marginBottom: '24px' }}>Dashboard</h2>
+      <h2 style={{ marginBottom: '24px' }}>{t('dashboard.title')}</h2>
 
       <div className="stats-grid">
         <div className="stat-card">
           <h3>{stats?.total_documents ?? '-'}</h3>
-          <p>Total Documents</p>
+          <p>{t('dashboard.totalDocuments')}</p>
         </div>
         <div className="stat-card">
           <h3>{stats ? formatSize(stats.total_size_bytes) : '-'}</h3>
-          <p>Total Size</p>
+          <p>{t('dashboard.totalSize')}</p>
         </div>
         <div className="stat-card">
           <h3>{vectorStats?.total_chunks ?? '-'}</h3>
-          <p>Vector Chunks</p>
+          <p>{t('dashboard.vectorChunks')}</p>
         </div>
       </div>
 
-      <div style={{ marginBottom: '24px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-        <button className="btn btn-primary" onClick={handleScan} disabled={scanning}>
-          {scanning ? 'Scanning...' : '🔍 Scan Knowledge Base'}
-        </button>
-        <button
-          className="btn btn-primary"
-          onClick={handleIndex}
-          disabled={indexing}
-          style={{ background: 'var(--accent)' }}
-        >
-          {indexing ? 'Indexing...' : '🧠 Build RAG Index'}
-        </button>
-      </div>
+      {admin && (
+        <div style={{ marginBottom: '24px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={handleScan} disabled={scanning}>
+            {scanning ? t('dashboard.scanning') : `🔍 ${t('dashboard.scan')}`}
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={handleIndex}
+            disabled={indexing}
+            style={{ background: 'var(--accent)' }}
+          >
+            {indexing ? t('dashboard.indexing') : `🧠 ${t('dashboard.indexAll')}`}
+          </button>
+        </div>
+      )}
 
       {lastScan && (
         <div className="stat-card" style={{ maxWidth: '400px' }}>
-          <h3 style={{ fontSize: '16px', marginBottom: '8px' }}>Last Scan Result</h3>
-          <p>✅ Created: {lastScan.created}</p>
-          <p>🔄 Updated: {lastScan.updated}</p>
-          <p>🗑️ Deleted: {lastScan.deleted}</p>
+          <h3 style={{ fontSize: '16px', marginBottom: '8px' }}>{t('dashboard.lastScan')}</h3>
+          <p>✅ {t('dashboard.created')}: {lastScan.created}</p>
+          <p>🔄 {t('dashboard.updated')}: {lastScan.updated}</p>
+          <p>🗑️ {t('dashboard.deleted')}: {lastScan.deleted}</p>
         </div>
       )}
 
       {lastIndex && (
         <div className="stat-card" style={{ maxWidth: '400px', marginTop: '12px' }}>
-          <h3 style={{ fontSize: '16px', marginBottom: '8px' }}>Last RAG Index Result</h3>
+          <h3 style={{ fontSize: '16px', marginBottom: '8px' }}>{t('dashboard.lastIndex')}</h3>
           <p>📄 {lastIndex.message}</p>
-          <p>🧩 Total chunks: {lastIndex.total_chunks}</p>
+          <p>🧩 {t('dashboard.chunks')}: {lastIndex.total_chunks}</p>
         </div>
       )}
 
       <div style={{ marginTop: '32px', color: 'var(--text-secondary)' }}>
-        <h3 style={{ marginBottom: '12px', color: 'var(--text-primary)' }}>Quick Start</h3>
+        <h3 style={{ marginBottom: '12px', color: 'var(--text-primary)' }}>{t('dashboard.quickStart')}</h3>
         <ol style={{ paddingLeft: '20px', lineHeight: 2 }}>
-          <li>Place your Markdown files in the knowledge directory</li>
-          <li>Click "Scan Knowledge Base" to index them</li>
-          <li>Click "Build RAG Index" to enable semantic search</li>
-          <li>Browse files in the Knowledge tab</li>
-          <li>Use 🧠 semantic search to find content by meaning</li>
+          <li>{t('dashboard.qs1')}</li>
+          <li>{t('dashboard.qs2')}</li>
+          <li>{t('dashboard.qs3')}</li>
+          <li>{t('dashboard.qs4')}</li>
+          <li>{t('dashboard.qs5')}</li>
         </ol>
       </div>
     </div>

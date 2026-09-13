@@ -242,7 +242,8 @@ def _row_to_result(row) -> dict:
 
 
 def search_dense(query: str, node_id: str | None = None,
-                 candidate_limit: int | None = None) -> list[dict]:
+                 candidate_limit: int | None = None,
+                 excluded_doc_ids: "set[int] | None" = None) -> list[dict]:
     """稠密检索：pgvector 余弦相似度，chunk 级 top-N 候选（不按文档去重）."""
     from app.services.rag.embeddings import embed_text, get_dimension
 
@@ -260,11 +261,15 @@ def search_dense(query: str, node_id: str | None = None,
     else:
         dist_expr = "embedding <=> %s::vector"
 
-    where_clause = ""
-    params = [emb_str]
+    where_parts: list[str] = []
+    params: list = [emb_str]
     if node_id:
-        where_clause = "WHERE node_id = %s"
+        where_parts.append("node_id = %s")
         params.append(node_id)
+    if excluded_doc_ids:
+        where_parts.append("doc_id NOT IN %s")
+        params.append(tuple(excluded_doc_ids))
+    where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
 
     sql = f"""
         SELECT doc_id, title, path, node_id, content, 1 - ({dist_expr}) AS score
@@ -315,7 +320,8 @@ def _like_pattern(term: str) -> str:
 
 
 def search_sparse(query: str, node_id: str | None = None,
-                  candidate_limit: int | None = None) -> list[dict]:
+                  candidate_limit: int | None = None,
+                  excluded_doc_ids: "set[int] | None" = None) -> list[dict]:
     """稀疏检索：pg_trgm 关键词精确命中（content/title/path），命中词项数打分."""
     terms = _tokenize(query)
     if not terms:
@@ -348,9 +354,15 @@ def search_sparse(query: str, node_id: str | None = None,
     where_sql = " OR ".join(where_parts)
 
     node_filter = ""
+    extra_filters: list[str] = []
     if node_id:
-        node_filter = "AND node_id = %s"
+        extra_filters.append("node_id = %s")
         params.append(node_id)
+    if excluded_doc_ids:
+        extra_filters.append("doc_id NOT IN %s")
+        params.append(tuple(excluded_doc_ids))
+    if extra_filters:
+        node_filter = "AND " + " AND ".join(extra_filters)
 
     sql = f"""
         SELECT doc_id, title, path, node_id, content, ({score_sql}) AS score
@@ -368,19 +380,28 @@ def search_sparse(query: str, node_id: str | None = None,
     return [_row_to_result(r) for r in rows]
 
 
-def search_hybrid(query: str, limit: int = 5, node_id: str | None = None) -> list[dict]:
+def search_hybrid(query: str, limit: int = 5, node_id: str | None = None,
+                  excluded_doc_ids: "set[int] | None" = None) -> list[dict]:
     """混合检索：文档级加权 RRF 融合.
 
     先对 dense/sparse 各自按「同文档只保留最佳分块」归并出文档级排名，
     再做加权 RRF 融合，避免 chunk 级融合把多分块文档的排名稀释、
     或让单分块文档借噪声反超（见 eval 回归定位）。最终按文档 rrf 顺序
     返回每文档至多 chunks_per_doc 个分块（dense 优先，sparse-only 补充）。
+
+    excluded_doc_ids: RAG 排除集(rag_status != indexed),检索两侧候选均过滤。
     """
     ensure_table()
     candidate_limit = settings.search_candidate_limit
 
-    dense = search_dense(query, node_id, candidate_limit)
-    sparse = search_sparse(query, node_id, candidate_limit)
+    dense = search_dense(
+        query, node_id=node_id, candidate_limit=candidate_limit,
+        excluded_doc_ids=excluded_doc_ids,
+    )
+    sparse = search_sparse(
+        query, node_id=node_id, candidate_limit=candidate_limit,
+        excluded_doc_ids=excluded_doc_ids,
+    )
 
     # 相似度阈值过滤（仅作用于 dense 侧；sparse 精确命中不受影响）
     min_score = settings.search_min_score

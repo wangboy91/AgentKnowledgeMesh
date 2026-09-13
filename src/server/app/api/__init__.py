@@ -3,8 +3,10 @@
 每个模块暴露一个 APIRouter，统一在此挂载前缀和标签。
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.auth import router as auth_router
+from app.services.auth import require_auth
 from app.api.context import router as context_router
 from app.api.convert import router as convert_router
 from app.api.documents import router as documents_router
@@ -12,20 +14,23 @@ from app.api.mcp import router as mcp_router
 from app.api.nodes import router as nodes_router
 from app.api.rag import router as rag_router
 from app.api.search import router as search_router
+from app.api.settings import router as settings_router
 
 router = APIRouter()
 
+router.include_router(auth_router, prefix="/auth", tags=["auth"])
 router.include_router(documents_router, prefix="/documents", tags=["documents"])
 router.include_router(search_router, prefix="/search", tags=["search"])
 router.include_router(nodes_router, prefix="/nodes", tags=["nodes"])
 router.include_router(context_router, prefix="/context", tags=["context"])
 router.include_router(mcp_router, prefix="/mcp", tags=["mcp"])
 router.include_router(rag_router, prefix="/rag", tags=["rag"])
+router.include_router(settings_router, prefix="/settings", tags=["settings"])
 router.include_router(convert_router, prefix="/convert", tags=["convert"])
 
 
 @router.get("/stats")
-async def get_stats():
+async def get_stats(principal=Depends(require_auth("viewer"))):
     """获取系统统计信息."""
     from sqlalchemy import select, func
 

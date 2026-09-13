@@ -34,6 +34,16 @@ async def lifespan(app: FastAPI):
     # 启动时初始化数据库
     await init_db()
 
+    # 首次启动创建管理员账号(account-auth)
+    from app.services.auth import ensure_admin_user
+
+    await ensure_admin_user()
+
+    # 启动时无任何活跃连接,重置残留的"在线"节点状态
+    from app.services.websocket import reset_all_nodes_offline
+
+    await reset_all_nodes_offline()
+
     # 初始化向量数据库表（失败不阻塞启动，RAG 功能降级可用）
     try:
         from app.services.rag.vector_store import init_table

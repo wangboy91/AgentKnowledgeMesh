@@ -23,15 +23,17 @@ def test_health_endpoint():
 
 
 def test_core_api_routes():
-    """核心 API 路由应可访问."""
-    # rag/stats 不依赖数据库内容
+    """核心 API 路由应受鉴权保护(account-auth)."""
+    # 未携带凭证访问受保护端点一律 401(依赖在参数校验前拦截)
     resp = client.get("/api/rag/stats")
-    assert resp.status_code == 200
-    assert "total_chunks" in resp.json()
+    assert resp.status_code == 401
 
-    # search 缺少参数应返回 422（证明路由存在而非 404）
     resp = client.get("/api/search")
-    assert resp.status_code == 422
+    assert resp.status_code == 401
+
+    # 健康检查保持公开
+    resp = client.get("/api/health")
+    assert resp.status_code == 200
 
 
 def test_rag_provider_configured():

@@ -26,22 +26,27 @@ class HubTransport:
         self.node_name = settings.get_node_name()
         self.platform = settings.get_platform()
         self.connected = False
-        self.token: Optional[str] = None
+        # 节点凭证(account-auth):由 `akm-node login` 写入本地配置
+        self.token: Optional[str] = settings.node_token or None
+        # 最近一次连接失败是否因凭证无效(供运行层决定是否提供现场重登)
+        self.credential_failed = False
 
     async def connect(self):
         """连接到 Hub."""
         print(f"🔗 Connecting to Hub: {self.settings.hub_url}")
+        self.credential_failed = False
 
         try:
             self.ws = await websockets.connect(self.settings.hub_url)
             self.connected = True
 
-            # 发送注册消息
+            # 发送注册消息(必须携带节点 token,匿名注册被拒)
             await self.ws.send(json.dumps({
                 "type": "register",
                 "node_id": self.node_id,
                 "name": self.node_name,
                 "platform": self.platform,
+                "token": self.settings.node_token,
             }))
 
             # 等待注册确认
@@ -49,11 +54,15 @@ class HubTransport:
             data = json.loads(response)
 
             if data.get("type") == "register_ack":
-                self.token = data.get("token")
+                self.token = data.get("token") or self.token
                 print(f"✅ Registered with Hub: {self.node_id}")
                 return True
             else:
                 print(f"❌ Registration failed: {data}")
+                msg = str(data.get("message", ""))
+                if "credentials" in msg or "token" in msg or "disabled" in msg:
+                    self.credential_failed = True
+                    print("   提示:节点凭证无效或已失效,请重新执行 `uv run akm-node login`")
                 return False
 
         except Exception as e:

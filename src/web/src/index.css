@@ -763,3 +763,22 @@ body {
 .editor-body .w-md-editor-preview {
   border-left: 1px solid var(--border-color);
 }
+
+/* 知识库三栏:中间文件树栏(收窄节点列 + 树 + 右渲染) */
+.tree-pane {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-color, #e5e5e5);
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--bg-secondary, #ffffff);
+}
+.tree-pane .file-tree {
+  font-size: 13px;
+}
+@media (max-width: 1024px) {
+  /* 窄屏两栏退化:隐藏文件树栏 */
+  .tree-pane {
+    display: none;
+  }
+}

@@ -27,15 +27,18 @@ logger = logging.getLogger(__name__)
 async def sync_documents(
     session: AsyncSession,
     scanned: list[ScannedDocument],
+    rag_mode: str = "auto",
 ) -> dict:
     """同步扫描结果到数据库.
 
     Args:
         session: 数据库会话
         scanned: 扫描到的文档列表
+        rag_mode: RAG 同步模式(auto 产生向量载荷 / manual 置 excluded 不产生)
 
     Returns:
-        同步统计 {created, updated, deleted}
+        同步统计 {created, updated, deleted} 及 vector_ops 载荷
+        {upserts, deleted_ids},由调用方决定后台派发。
     """
     # 获取现有索引
     result = await session.execute(select(Document))
@@ -43,6 +46,9 @@ async def sync_documents(
 
     scanned_paths = {doc.path for doc in scanned}
     stats = {"created": 0, "updated": 0, "deleted": 0}
+    changed_paths: list[str] = []  # created/updated 的路径(入库取 id)
+
+    rag_status = "indexed" if rag_mode == "auto" else "excluded"
 
     # 处理扫描到的文档
     for doc in scanned:
@@ -54,20 +60,9 @@ async def sync_documents(
                 old_doc.hash = doc.hash
                 old_doc.size = doc.size
                 old_doc.content = doc.content
+                old_doc.rag_status = rag_status
                 stats["updated"] += 1
-
-                # 更新向量存储
-                try:
-                    from app.services.rag.vector_store import add_document
-                    add_document(
-                        doc_id=old_doc.id,
-                        title=old_doc.title,
-                        path=old_doc.path,
-                        content=old_doc.content,
-                        node_id=old_doc.node_id,
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to update vector for {doc.path}: {e}")
+                changed_paths.append(doc.path)
         else:
             # 新文档，插入
             new_doc = Document(
@@ -76,49 +71,42 @@ async def sync_documents(
                 hash=doc.hash,
                 size=doc.size,
                 content=doc.content,
+                rag_status=rag_status,
             )
             session.add(new_doc)
             stats["created"] += 1
+            changed_paths.append(doc.path)
 
-    # 删除已不存在的文档
+    # 删除已不存在的文档(删除前捕获 id 供向量清理)
     paths_to_delete = set(existing.keys()) - scanned_paths
+    deleted_ids: list[int] = []
     if paths_to_delete:
-        # 先删除向量
-        for path in paths_to_delete:
-            doc = existing[path]
-            try:
-                from app.services.rag.vector_store import delete_document
-                delete_document(doc.id)
-            except Exception as e:
-                logger.warning(f"Failed to delete vector for {path}: {e}")
-
+        deleted_ids = [existing[p].id for p in paths_to_delete]
         await session.execute(
             delete(Document).where(Document.path.in_(paths_to_delete))
         )
         stats["deleted"] = len(paths_to_delete)
 
+    # flush 使新增文档获得 id,构建向量载荷(commit 前避免回滚后派发)
+    await session.flush()
+    upserts = []
+    if rag_mode == "auto":
+        for path in changed_paths:
+            doc = existing.get(path)
+            if doc is None:
+                # 本轮新插入的文档不在 existing 中,flush 后按路径查询取 id
+                row = await session.execute(
+                    select(Document).where(Document.path == path)
+                )
+                doc = row.scalar_one_or_none()
+            if doc is not None and doc.content:
+                upserts.append({
+                    "doc_id": doc.id,
+                    "title": doc.title,
+                    "path": doc.path,
+                    "content": doc.content,
+                    "node_id": doc.node_id,
+                })
+
     await session.commit()
-
-    # 为新文档添加向量（需要先 commit 获取 ID）
-    if stats["created"] > 0:
-        try:
-            from app.services.rag.vector_store import add_document
-            # 重新查询新添加的文档
-            result = await session.execute(select(Document))
-            all_docs = {doc.path: doc for doc in result.scalars().all()}
-
-            for doc in scanned:
-                if doc.path not in existing:
-                    db_doc = all_docs.get(doc.path)
-                    if db_doc and db_doc.content:
-                        add_document(
-                            doc_id=db_doc.id,
-                            title=db_doc.title,
-                            path=db_doc.path,
-                            content=db_doc.content,
-                            node_id=db_doc.node_id,
-                        )
-        except Exception as e:
-            logger.warning(f"Failed to add vectors for new documents: {e}")
-
-    return stats
+    return {**stats, "vector_ops": {"upserts": upserts, "deleted_ids": deleted_ids}}

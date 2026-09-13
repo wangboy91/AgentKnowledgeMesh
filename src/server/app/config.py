@@ -17,6 +17,16 @@ class Settings(BaseSettings):
     app_name: str = Field(
         "AgentKnowledgeMesh",
     )
+    # 鉴权配置(account-auth)
+    secret_key: str = Field(
+        "",
+    )  # JWT 密钥;为空时首次启动生成并持久化到 data/secret.key
+    admin_username: str = Field(
+        "",
+    )  # 首次启动创建的管理员用户名(空则默认 admin)
+    admin_password: str = Field(
+        "",
+    )  # 首次启动创建的管理员密码(空则生成随机密码打印到日志)
     app_version: str = Field(
         "0.1.0",
     )

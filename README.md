@@ -85,11 +85,15 @@ npm run dev             # http://localhost:5173(已代理 /api → :8000)
 ```bash
 cd src/node
 uv sync
-cp .env.example .env    # 配置 AKM_HUB_URL 与 AKM_KNOWLEDGE_ROOTS
-uv run akm-node         # 自动注册并同步本地文档
+uv run akm-node login   # 交互输入 Hub 地址与管理员账号,凭证写入本地 .env
+uv run akm-node         # 无头常驻:注册、心跳、hash-first 增量同步本地文档
 ```
 
-> V0.4 后节点接入将改为 `akm-node login` 登录制(见下「使用说明」)。
+> 首次启动 Hub 会自动创建管理员账号(默认用户名 `admin`,随机密码打印在启动日志;可用 `AKM_ADMIN_USERNAME` / `AKM_ADMIN_PASSWORD` 环境变量指定)。忘记密码可在 Hub 所在机器执行 `uv run akm-hub reset-password <username>`。
+>
+> 知识库目录仍通过节点本地 `.env` 的 `AKM_KNOWLEDGE_ROOTS` 配置(参考 `src/node/.env.example`)。
+>
+> 同步为 hash-first 增量:首轮全量上传,之后未变更文档仅上报 path+hash,删除显式走 `deletions`;快照存于 `src/node/data/sync_state.json`(已 gitignore),删除它可在下轮强制全量重建。协议细节见 [docs/api-reference.md §8](docs/api-reference.md)。
 
 ### Docker
 
@@ -101,10 +105,10 @@ docker compose -f docker-compose.node.yml up -d       # Node
 
 ## 使用说明
 
-- **浏览知识库**:Web 首页看统计;知识库页选节点 → 浏览目录树 → 点开文档渲染(三栏树形为 V0.4 规划)
+- **浏览知识库**:Web 首页看统计;知识库页三栏布局(左选节点 → 中文件树 → 右渲染),搜索命中自动展开到对应文档,展开状态按节点记忆
 - **搜索**:顶栏实时搜索 = 关键词检索;语义检索走 `/api/rag/search`(或界面检索入口)
-- **文档进 RAG**:当前节点文档自动入向量库,本地扫描的文档用 `POST /api/rag/index` 重建;V0.4 将支持 auto/manual 模式与文档级勾选
-- **AI 工具接入(MCP)**:推荐方式 —— 机器上装有节点时,智能体直接用本地节点做 MCP 入口(免配 Hub 地址与凭证):
+- **文档进 RAG**:默认 auto 模式,节点文档与本地扫描的文档自动进入向量库;设置页可切 manual(新文档默认 excluded,仅手动勾选参与语义检索,文档树中 ⛔ 徽标可点击单篇加入/移出,顶部+/-批量操作)。语义检索与关键词临界见设置页说明
+- **AI 工具接入(MCP)**:推荐方式 —— 机器上装有节点时,智能体直接用本地节点做 MCP 入口(免配 Hub 地址与凭证;凭证只留节点本机):
 
 ```json
 {
@@ -118,10 +122,12 @@ docker compose -f docker-compose.node.yml up -d       # Node
 }
 ```
 
-远程/无节点机器用 Hub:SSE 模式 `"url": "http://localhost:8000/api/mcp/sse"`(V0.4 起需 API Token),或 Hub 本机 stdio 模式 `"command": "uv", "args": ["run", "akm-hub", "--mcp"]`。可用工具:`search_documents` / `get_document` / `list_documents`。测试:`npx @modelcontextprotocol/inspector http://localhost:8000/api/mcp/sse`。
+节点代理经 stdio 提供与 Hub 同名的三个工具(`search_documents` / `get_document` / `list_documents`),内部转调 Hub HTTP API(统一 10s 超时);`search_documents` 支持 `mode=semantic` 走 Hub 语义混合检索(向量⊕关键词按权重融合);节点本地无凭证(未执行过 `akm-node login`)时会输出"请先执行 akm-node login"并退出。
 
-- **Agent 检索接口**:`GET /api/context?q=xxx`(V0.4 起需 API Token)
-- **节点接入(V0.4 规划)**:`uv run akm-node login` 输入账号密码 → 换取节点 token → 无头常驻;Web 端可吊销/重置
+远程/无节点机器用 Hub:SSE 模式 `"url": "http://localhost:8000/api/mcp/sse"`(需在 Web「设置」页创建 API Token),或 Hub 本机 stdio 模式 `"command": "uv", "args": ["run", "akm-hub", "--mcp"]`。三种接入形态工具集与返回格式完全一致。测试:`npx @modelcontextprotocol/inspector http://localhost:8000/api/mcp/sse`。
+
+- **Agent 检索接口**:`GET /api/context?q=xxx`(需 API Token)
+- **节点接入**:`uv run akm-node login` 输入账号密码 → 换取节点 token → 无头常驻;Web 端可吊销/重置(见 §3「节点接入」)
 
 ## 配置
 

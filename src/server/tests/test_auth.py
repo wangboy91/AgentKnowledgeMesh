@@ -1,0 +1,170 @@
+"""认证核心单元测试(account-auth).
+
+覆盖口令哈希、JWT 签发/校验、三类凭证解析(JWT / API Token / 节点 token)。
+"""
+
+import jwt as pyjwt
+import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
+from app.db import Base, get_session
+from app.main import app
+from app.models import ApiToken, Node, User
+from app.services.auth import (
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    resolve_principal,
+    verify_password,
+)
+
+
+@pytest_asyncio.fixture
+async def db():
+    """独立的内存数据库."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    yield factory
+    await engine.dispose()
+
+
+# ---------- 口令哈希 ----------
+
+
+def test_password_hash_roundtrip():
+    h = hash_password("s3cret-密码")
+    assert h.startswith("$akm-pbkdf2$")
+    assert verify_password("s3cret-密码", h)
+    assert not verify_password("wrong", h)
+
+
+def test_password_hash_unique_salt():
+    assert hash_password("same") != hash_password("same")
+
+
+def test_verify_password_malformed_hash():
+    assert not verify_password("x", "not-a-valid-hash")
+    assert not verify_password("x", "$akm-pbkdf2$abc$salt$deadbeef")
+
+
+# ---------- JWT ----------
+
+
+def test_jwt_roundtrip():
+    token = create_access_token("alice", "admin")
+    claims = decode_access_token(token)
+    assert claims["sub"] == "alice"
+    assert claims["role"] == "admin"
+
+
+def test_jwt_invalid_token():
+    assert decode_access_token("garbage.token.value") is None
+
+
+def test_jwt_expired():
+    from datetime import datetime, timedelta, timezone
+
+    from app.services.auth import _secret_key
+
+    payload = {
+        "sub": "alice",
+        "role": "admin",
+        "exp": datetime.now(timezone.utc) - timedelta(hours=1),
+    }
+    expired = pyjwt.encode(payload, _secret_key(), algorithm="HS256")
+    assert decode_access_token(expired) is None
+
+
+# ---------- 凭证解析 ----------
+
+
+@pytest.mark.asyncio
+async def test_resolve_principal_user(db):
+    async with db() as session:
+        session.add(User(username="alice", password_hash=hash_password("pw"), role="admin"))
+        await session.commit()
+
+    async with db() as session:
+        principal = await resolve_principal(create_access_token("alice", "admin"), session)
+        assert principal is not None
+        assert principal.kind == "user"
+        assert principal.role == "admin"
+
+
+@pytest.mark.asyncio
+async def test_resolve_principal_user_disabled(db):
+    async with db() as session:
+        session.add(
+            User(username="bob", password_hash=hash_password("pw"), role="viewer", disabled=True)
+        )
+        await session.commit()
+
+    async with db() as session:
+        assert await resolve_principal(create_access_token("bob", "viewer"), session) is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_principal_api_token(db):
+    async with db() as session:
+        session.add(
+            ApiToken(
+                name="ci",
+                token_hash=__import__("hashlib").sha256(b"akm_testtoken").hexdigest(),
+                token_prefix="akm_testt",
+                role="viewer",
+            )
+        )
+        await session.commit()
+
+    async with db() as session:
+        principal = await resolve_principal("akm_testtoken", session)
+        assert principal is not None
+        assert principal.kind == "api_token"
+        assert principal.role == "viewer"
+
+
+@pytest.mark.asyncio
+async def test_resolve_principal_api_token_revoked(db):
+    from datetime import datetime
+
+    async with db() as session:
+        session.add(
+            ApiToken(
+                name="revoked",
+                token_hash=__import__("hashlib").sha256(b"akm_old").hexdigest(),
+                token_prefix="akm_old",
+                role="viewer",
+                revoked_at=datetime(2020, 1, 1),
+            )
+        )
+        await session.commit()
+
+    async with db() as session:
+        assert await resolve_principal("akm_old", session) is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_principal_node(db):
+    async with db() as session:
+        session.add(Node(id="node-1", name="n", platform="win", token="a" * 32))
+        await session.commit()
+
+    async with db() as session:
+        principal = await resolve_principal("a" * 32, session)
+        assert principal is not None
+        assert principal.kind == "node"
+        assert principal.node_id == "node-1"
+
+
+@pytest.mark.asyncio
+async def test_resolve_principal_unknown(db):
+    async with db() as session:
+        assert await resolve_principal("no-such-credential", session) is None

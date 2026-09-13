@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { api, RagSearchResult } from '../api/client'
 
 type SearchMode = 'semantic' | 'keyword'
 
 export default function SearchBar() {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<RagSearchResult[]>([])
   const [showResults, setShowResults] = useState(false)
@@ -81,7 +83,7 @@ export default function SearchBar() {
         <input
           type="text"
           className="search-input"
-          placeholder={mode === 'semantic' ? 'Semantic search...' : 'Keyword search...'}
+          placeholder={mode === 'semantic' ? t('search.semanticPh') : t('search.keywordPh')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => results.length > 0 && setShowResults(true)}
@@ -89,7 +91,7 @@ export default function SearchBar() {
         />
         <button
           onClick={toggleMode}
-          title={mode === 'semantic' ? 'Switch to keyword search' : 'Switch to semantic search'}
+          title={mode === 'semantic' ? t('search.switchKeyword') : t('search.switchSemantic')}
           style={{
             background: mode === 'semantic' ? 'var(--accent)' : 'var(--bg-secondary)',
             color: mode === 'semantic' ? '#fff' : 'var(--text-primary)',
@@ -144,7 +146,7 @@ export default function SearchBar() {
       {showResults && query.length >= 2 && results.length === 0 && !loading && (
         <div className="search-dropdown">
           <div style={{ padding: '12px', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '13px' }}>
-            No results found
+            {t('search.noResults')}
           </div>
         </div>
       )}

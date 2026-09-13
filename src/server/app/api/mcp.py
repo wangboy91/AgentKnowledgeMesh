@@ -4,7 +4,9 @@
 让 Claude Code、Cursor 等工具可以通过 HTTP 连接到 MCP Server。
 """
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
+
+from app.services.auth import require_auth
 from sse_starlette.sse import EventSourceResponse
 from mcp.server.sse import SseServerTransport
 
@@ -17,7 +19,7 @@ sse_transport = SseServerTransport("/messages")
 
 
 @router.get("/sse")
-async def mcp_sse(request: Request):
+async def mcp_sse(request: Request, principal=Depends(require_auth("viewer"))):
     """SSE 端点 - 建立长期连接.
 
     客户端连接此端点接收服务器推送的消息。
@@ -35,7 +37,7 @@ async def mcp_sse(request: Request):
 
 
 @router.post("/messages")
-async def mcp_messages(request: Request):
+async def mcp_messages(request: Request, principal=Depends(require_auth("viewer"))):
     """消息端点 - 接收客户端请求.
 
     客户端通过 POST 发送请求到此端点。
