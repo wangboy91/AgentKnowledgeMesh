@@ -97,3 +97,29 @@ async def test_tree_files_carry_rag_status(db, client, admin_headers):
     tree = resp.json()
     assert tree["docs"]["a.md"]["_rag_status"] == "indexed"
     assert tree["docs"]["sub"]["b.md"]["_rag_status"] == "excluded"
+
+
+async def test_list_documents_default_full(db, client, admin_headers):
+    await _seed(db)
+    resp = await client.get("/api/documents", headers=admin_headers)
+    assert resp.status_code == 200
+    paths = {d["path"] for d in resp.json()}
+    assert paths == {"docs/a.md", "docs/sub/b.md", "other.md"}
+
+
+async def test_list_documents_filter_by_node(db, client, admin_headers):
+    await _seed(db)
+    resp = await client.get("/api/documents", params={"node_id": "node-1"}, headers=admin_headers)
+    assert resp.status_code == 200
+    paths = {d["path"] for d in resp.json()}
+    assert paths == {"docs/a.md", "docs/sub/b.md"}
+    # 其它节点文档不外泄
+    assert "other.md" not in paths
+
+
+async def test_list_documents_filter_local_node(db, client, admin_headers):
+    """local 作为节点 ID 参与过滤(node_id='local' 为 hub 本机目录)."""
+    await _seed(db)
+    resp = await client.get("/api/documents", params={"node_id": "local"}, headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.json() == []

@@ -40,12 +40,15 @@ class DocumentRagBatch(BaseModel):
 
 @router.get("")
 async def list_documents(
+    node_id: str | None = Query(None, description="节点 ID 过滤(缺省全量;local 为 hub 本机目录)"),
     rag_status: str | None = Query(None, description="按 RAG 状态过滤(indexed/pending/excluded)"),
     principal=Depends(require_auth("viewer", allow_node=True)),
     session: AsyncSession = Depends(get_session),
 ):
-    """获取文档列表（不含内容）."""
+    """获取文档列表（不含内容），可按 node_id / rag_status 过滤."""
     stmt = select(Document).order_by(Document.updated_at.desc())
+    if node_id:
+        stmt = stmt.where(Document.node_id == node_id)
     if rag_status:
         stmt = stmt.where(Document.rag_status == rag_status)
     result = await session.execute(stmt)

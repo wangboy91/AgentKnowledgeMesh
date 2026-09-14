@@ -6,8 +6,6 @@ POST /api/auth/login -> POST /api/nodes/register 换取节点 token,
 """
 
 import asyncio
-import getpass
-import sys
 from pathlib import Path
 
 import httpx
@@ -16,15 +14,15 @@ from app.config import BASE_DIR, settings
 
 
 def _read_password(prompt: str) -> str:
-    """读密码:交互终端用 getpass 隐藏输入;管道/重定向时回退普通读取.
+    """读密码:明文输入,便于核对避免盲打输错;回车后立即提交,不再停留显示.
 
-    Windows 下 getpass 直读控制台,stdin 被重定向(脚本/CI)时会永久阻塞,
-    因此非 tty 环境必须走普通读取。
+    输入过程不隐藏(getpass 遮罩会隐藏打出的字符,错一个容易反复重试);
+    按需场景下用户自行权衡安全性。非交互(管道/CI)时 stdin EOF 返回空。
     """
-    if sys.stdin.isatty() and sys.stderr.isatty():
-        return getpass.getpass(prompt)
-    print(prompt, end="", flush=True)
-    return sys.stdin.readline().rstrip("\r\n")
+    try:
+        return input(prompt)
+    except EOFError:
+        return ""
 
 
 def _derive_ws_url(hub_api_url: str) -> str:

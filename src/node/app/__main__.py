@@ -35,8 +35,6 @@ def main():
     # 本地 MCP 代理模式:智能体拉起子进程,stdio 提供与 Hub 同名的三个工具;
     # 单职责短生命周期进程,不启动同步循环
     if "--mcp" in sys.argv:
-        import asyncio
-
         from app.mcp_proxy import run_mcp_proxy
 
         asyncio.run(run_mcp_proxy())

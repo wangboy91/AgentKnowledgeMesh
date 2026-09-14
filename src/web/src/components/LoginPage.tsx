@@ -1,10 +1,15 @@
+/**
+ * 登录页(account-auth):未认证时整站门禁
+ */
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { login } from '../api/client'
+import { useToast } from './Toast'
+import { AlertIcon } from './Icon'
 
-/** 登录页(account-auth):未认证时整站门禁 */
 export default function LoginPage() {
   const { t } = useTranslation()
+  const toast = useToast()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -16,71 +21,62 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await login(username, password)
-      // 登录成功后整站刷新状态(由 App 层监听会话变化)
       window.dispatchEvent(new CustomEvent('akm:session-changed'))
+      toast.success(t('login.welcomeBack'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('login.failed'))
+      const msg = err instanceof Error ? err.message : t('login.failed')
+      setError(msg)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--bg-color, #f5f6f8)',
-      }}
-    >
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          width: 320,
-          padding: 32,
-          borderRadius: 12,
-          border: '1px solid var(--border-color, #e0e0e0)',
-          background: 'var(--panel-bg, #fff)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 14,
-        }}
-      >
-        <h1 style={{ fontSize: 20, margin: 0, textAlign: 'center' }}>
-          🔐 AgentKnowledgeMesh
-        </h1>
-        <p style={{ fontSize: 13, color: 'var(--text-secondary, #888)', textAlign: 'center', margin: 0 }}>
-          {t('login.welcome')}
-        </p>
-        <input
-          value={username}
-          onChange={e => setUsername(e.target.value)}
-          placeholder={t('login.username')}
-          autoFocus
-          style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color, #ddd)' }}
-        />
-        <input
-          type="password"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-          placeholder={t('login.password')}
-          style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color, #ddd)' }}
-        />
-        {error && <div style={{ color: '#e5484d', fontSize: 13 }}>{error}</div>}
+    <div className="login">
+      <form className="login__card" onSubmit={handleSubmit}>
+        <div className="login__brand">
+          <h1>{t('layout.headerTitle')}</h1>
+          <p>{t('login.welcome')}</p>
+        </div>
+
+        <div className="login__field">
+          <label htmlFor="login-username">{t('login.username')}</label>
+          <input
+            id="login-username"
+            className="input"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoFocus
+            autoComplete="username"
+            disabled={loading}
+          />
+        </div>
+
+        <div className="login__field">
+          <label htmlFor="login-password">{t('login.password')}</label>
+          <input
+            id="login-password"
+            className="input"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            disabled={loading}
+          />
+        </div>
+
+        {error && (
+          <div className="login__error" role="alert">
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <AlertIcon size={14} /> <span>{error}</span>
+            </span>
+          </div>
+        )}
+
         <button
           type="submit"
+          className="btn btn--primary"
           disabled={loading || !username || !password}
-          style={{
-            padding: '10px 12px',
-            borderRadius: 8,
-            border: 'none',
-            background: 'var(--accent-color, #4f7cff)',
-            color: '#fff',
-            cursor: loading ? 'wait' : 'pointer',
-            fontWeight: 600,
-          }}
         >
           {loading ? t('login.submitting') : t('login.submit')}
         </button>

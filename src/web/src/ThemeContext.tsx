@@ -11,13 +11,13 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem('agentvault-theme')
+    const saved = localStorage.getItem('akm.theme')
     return (saved as Theme) || 'dark'
   })
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('agentvault-theme', theme)
+    localStorage.setItem('akm.theme', theme)
   }, [theme])
 
   function toggleTheme() {

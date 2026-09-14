@@ -168,28 +168,39 @@ async def _sync_node_documents(
     只增删改 node_id 匹配的文档，绝不触及 local 或其他节点的文档。
     返回 (同步统计, 向量操作载荷)；载荷在 commit 前捕获所需数据
     （新增文档 flush 取 id、待删文档删除前取 id），供响应后派发后台向量维护。
+
+    路径归一化:无论节点端(旧版 Windows 扫描)推送 "/" 还是 "\\" 分隔符,
+    统一以 "/" 入库——hub 端 URL/树/查找均以此为准,避免跨端路径不一致。
     """
+    # 归一化路径(兼容 Windows 节点旧数据;空格两端清理)
+    def norm(p: str) -> str:
+        return p.replace("\\", "/").strip()
+
     result = await session.execute(
         select(Document).where(Document.node_id == node_id)
     )
-    existing = {doc.path: doc for doc in result.scalars().all()}
+    existing = {norm(doc.path): doc for doc in result.scalars().all()}
 
     stats = {"created": 0, "updated": 0, "deleted": 0, "rejected": []}
     changed: list[Document] = []
+    created_this_batch: set[str] = set()  # 同批内新增路径去重(归一化后可能碰撞)
 
     for doc in documents:
-        old_doc = existing.get(doc.path)
+        path = norm(doc.path)
+        if not path:
+            continue
+        old_doc = existing.get(path)
         if doc.content is None:
             # hash-first:无全文条目仅在库中哈希一致时跳过,否则拒绝等待下轮重传
             if old_doc is not None and old_doc.hash == doc.hash:
                 continue
             reason = "path not found" if old_doc is None else "hash mismatch"
-            stats["rejected"].append({"path": doc.path, "reason": reason})
+            stats["rejected"].append({"path": path, "reason": reason})
             continue
-        if old_doc is None:
+        if old_doc is None and path not in created_this_batch:
             new_doc = Document(
                 node_id=node_id,
-                path=doc.path,
+                path=path,
                 title=doc.title,
                 hash=doc.hash,
                 size=doc.size,
@@ -197,9 +208,10 @@ async def _sync_node_documents(
                 rag_status="indexed" if rag_mode == "auto" else "excluded",
             )
             session.add(new_doc)
+            created_this_batch.add(path)
             stats["created"] += 1
             changed.append(new_doc)
-        elif old_doc.hash != doc.hash:
+        elif old_doc is not None and old_doc.hash != doc.hash:
             old_doc.title = doc.title
             old_doc.hash = doc.hash
             old_doc.size = doc.size
@@ -210,8 +222,8 @@ async def _sync_node_documents(
 
     deleted_ids: list[int] = []
     # bulk delete 前捕获 doc_id（删除后无从查询，向量分块按 doc_id 清理）
-    scanned_paths = {doc.path for doc in documents}
-    to_delete: set[str] = {p for p in deletions if p in existing}
+    scanned_paths = {norm(doc.path) for doc in documents}
+    to_delete: set[str] = {norm(p) for p in deletions if norm(p) in existing}
     if implicit_delete:
         # 旧版全量推送兼容:列表缺失即删除
         to_delete |= set(existing.keys()) - scanned_paths

@@ -1,30 +1,35 @@
+/**
+ * 搜索框 · 嵌入 Topbar,占据中间区域
+ * - 双模式:Semantic (RAG) / Keyword (BM25-ish)
+ * - 300ms debounce,失焦不立即关闭(防止点结果时消失)
+ */
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { api, RagSearchResult } from '../api/client'
+import { SearchIcon, SparkleIcon } from './Icon'
 
-type SearchMode = 'semantic' | 'keyword'
+type Mode = 'semantic' | 'keyword'
 
 export default function SearchBar() {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<RagSearchResult[]>([])
   const [showResults, setShowResults] = useState(false)
-  const [mode, setMode] = useState<SearchMode>('semantic')
+  const [mode, setMode] = useState<Mode>('semantic')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
   const wrapperRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (query.length >= 2) {
-        doSearch(query)
-      } else {
-        setResults([])
-      }
-    }, 300)
-
+    if (query.length < 2) {
+      setResults([])
+      setShowResults(false)
+      return
+    }
+    const timer = setTimeout(() => doSearch(query), 300)
     return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, mode])
 
   useEffect(() => {
@@ -45,7 +50,6 @@ export default function SearchBar() {
         setResults(res.results)
       } else {
         const res = await api.search(q, 10)
-        // 将关键词搜索结果转为统一格式
         setResults(
           res.documents.map((doc) => ({
             doc_id: doc.id,
@@ -78,76 +82,56 @@ export default function SearchBar() {
   }
 
   return (
-    <div className="search-container" ref={wrapperRef} style={{ position: 'relative' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <input
-          type="text"
-          className="search-input"
-          placeholder={mode === 'semantic' ? t('search.semanticPh') : t('search.keywordPh')}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => results.length > 0 && setShowResults(true)}
-          style={{ flex: 1 }}
-        />
-        <button
-          onClick={toggleMode}
-          title={mode === 'semantic' ? t('search.switchKeyword') : t('search.switchSemantic')}
-          style={{
-            background: mode === 'semantic' ? 'var(--accent)' : 'var(--bg-secondary)',
-            color: mode === 'semantic' ? '#fff' : 'var(--text-primary)',
-            border: '1px solid var(--border)',
-            borderRadius: '6px',
-            padding: '4px 8px',
-            cursor: 'pointer',
-            fontSize: '12px',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {mode === 'semantic' ? '🧠' : '🔤'}
-        </button>
-      </div>
+    <div className="search" ref={wrapperRef}>
+      <span style={{ position: 'absolute', left: 8, top: 8, color: 'var(--color-text-subtle)', pointerEvents: 'none' }}>
+        <SearchIcon size={16} />
+      </span>
+      <input
+        className="search__input"
+        style={{ paddingLeft: 32 }}
+        type="text"
+        placeholder={mode === 'semantic' ? t('search.semanticPh') : t('search.keywordPh')}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onFocus={() => results.length > 0 && setShowResults(true)}
+        aria-label={t('search.semanticPh')}
+      />
+      <button
+        className={`search__mode-toggle ${mode === 'semantic' ? 'is-semantic' : ''}`}
+        onClick={toggleMode}
+        title={mode === 'semantic' ? t('search.switchKeyword') : t('search.switchSemantic')}
+        aria-label={mode === 'semantic' ? t('search.switchKeyword') : t('search.switchSemantic')}
+      >
+        {mode === 'semantic' ? <SparkleIcon size={14} /> : <SearchIcon size={14} />}
+        <span>{mode === 'semantic' ? t('search.modeSemantic') : t('search.modeKeyword')}</span>
+      </button>
 
       {showResults && results.length > 0 && (
-        <div className="search-dropdown">
+        <div className="search__dropdown" role="listbox">
           {results.map((r, i) => (
             <div
               key={`${r.doc_id}-${i}`}
-              className="search-result-item"
+              className="search-result"
+              role="option"
+              aria-selected={false}
               onClick={() => handleSelect(r)}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div className="search-result-title">{r.title}</div>
+              <div className="search-result__row">
+                <div className="search-result__title">{r.title}</div>
                 {r.score > 0 && (
-                  <span style={{ fontSize: '11px', color: 'var(--accent)', flexShrink: 0, marginLeft: '8px' }}>
-                    {(r.score * 100).toFixed(0)}%
-                  </span>
+                  <span className="search-result__score">{(r.score * 100).toFixed(0)}%</span>
                 )}
               </div>
-              <div className="search-result-path">{r.path}</div>
-              {r.chunk && (
-                <div style={{
-                  fontSize: '12px',
-                  color: 'var(--text-secondary)',
-                  marginTop: '4px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                }}>
-                  {r.chunk}
-                </div>
-              )}
+              <div className="search-result__path">{r.path}</div>
+              {r.chunk && <div className="search-result__chunk">{r.chunk}</div>}
             </div>
           ))}
         </div>
       )}
 
       {showResults && query.length >= 2 && results.length === 0 && !loading && (
-        <div className="search-dropdown">
-          <div style={{ padding: '12px', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '13px' }}>
-            {t('search.noResults')}
-          </div>
+        <div className="search__dropdown">
+          <div className="search-empty">{t('search.noResults')}</div>
         </div>
       )}
     </div>

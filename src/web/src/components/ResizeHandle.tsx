@@ -41,8 +41,11 @@ export default function ResizeHandle({ onResize, minWidth = 200, maxWidth = 500 
 
   return (
     <div
-      className={`resize-handle ${isDragging ? 'active' : ''}`}
+      className={`resize-handle ${isDragging ? 'is-dragging' : ''}`}
       onMouseDown={handleMouseDown}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
     />
   )
 }

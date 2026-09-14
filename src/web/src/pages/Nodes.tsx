@@ -1,20 +1,46 @@
+/**
+ * 节点管理 · 表格 + 操作 + Token 一次性展示
+ */
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, isAdmin, Node } from '../api/client'
+import { useToast, useErrorReporter } from '../components/Toast'
+import { formatRelative } from '../utils/format'
+import {
+  GlobeIcon,
+  RefreshIcon,
+  KeyIcon,
+  TrashIcon,
+  CopyIcon,
+  BanIcon,
+  CheckIcon,
+} from '../components/Icon'
+
+const platformMap: Record<string, string> = {
+  darwin: 'macOS',
+  windows: 'Windows',
+  linux: 'Linux',
+}
+
+function platformIcon(platform: string): string {
+  const map: Record<string, string> = { darwin: '🍎', windows: '🪟', linux: '🐧' }
+  return map[platform] ?? '💻'
+}
 
 export default function Nodes() {
   const { t } = useTranslation()
+  const toast = useToast()
+  const reportError = useErrorReporter()
   const [nodes, setNodes] = useState<Node[]>([])
-  const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
-  const [error, setError] = useState('')
-  const [newToken, setNewToken] = useState<string | null>(null) // 重置后的节点 token(一次性展示)
+  const [newToken, setNewToken] = useState<{ id: string; token: string } | null>(null)
   const admin = isAdmin()
 
   useEffect(() => {
     loadNodes()
     const interval = setInterval(loadNodes, 10000)
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function loadNodes() {
@@ -22,200 +48,231 @@ export default function Nodes() {
       const data = await api.getNodes()
       setNodes(data)
     } catch (err) {
-      console.error('Failed to load nodes:', err)
-    } finally {
-      setLoading(false)
+      reportError(err)
     }
   }
 
   async function handleSync(nodeId: string) {
+    if (!admin) return
     setSyncing(nodeId)
     try {
       await api.syncNode(nodeId)
+      toast.success(t('nodes.syncOk'))
       await loadNodes()
     } catch (err) {
-      console.error('Sync failed:', err)
+      reportError(err)
     } finally {
       setSyncing(null)
     }
   }
 
-  async function handleDelete(nodeId: string) {
-    if (!confirm(t('nodes.confirmDelete'))) return
-
+  async function handleDelete(nodeId: string, nodeName: string) {
+    if (!admin) return
+    if (!confirm(t('nodes.confirmDelete', { name: nodeName }))) return
     try {
       await api.deleteNode(nodeId)
+      toast.success(t('nodes.deleted', { name: nodeName }))
       await loadNodes()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('nodes.deleteFailed'))
+      reportError(err)
     }
   }
 
-  /** 重置节点 token(admin):旧 token 立即失效,新 token 仅此展示一次 */
   async function handleResetToken(nodeId: string) {
+    if (!admin) return
     if (!confirm(t('nodes.confirmResetToken'))) return
-    setError('')
     try {
       const resp = await api.resetNodeToken(nodeId)
-      setNewToken(resp.node_token)
+      setNewToken({ id: nodeId, token: resp.node_token })
+      toast.warning(t('nodes.tokenSavedReminder'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('nodes.resetFailed'))
+      reportError(err)
     }
   }
 
-  /** 禁用/启用节点(admin) */
   async function handleToggleDisabled(node: Node) {
+    if (!admin) return
     const next = !node.disabled
     if (next && !confirm(t('nodes.confirmDisable'))) return
-    setError('')
     try {
       await api.setNodeDisabled(node.id, next)
+      toast.success(next ? t('nodes.disabled') : t('nodes.enabled'))
       await loadNodes()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('nodes.actionFailed'))
+      reportError(err)
     }
   }
 
-  function getPlatformIcon(platform: string) {
-    switch (platform) {
-      case 'darwin': return '🍎 macOS'
-      case 'windows': return '🪟 Windows'
-      case 'linux': return '🐧 Linux'
-      default: return '💻 Unknown'
+  async function copyToken() {
+    if (!newToken) return
+    try {
+      await navigator.clipboard.writeText(newToken.token)
+      toast.success(t('common.copied'))
+    } catch {
+      toast.warning(t('common.copyFailed'))
     }
-  }
-
-  function formatTime(iso: string | null) {
-    if (!iso) return 'Never'
-    return new Date(iso).toLocaleString()
-  }
-
-  if (loading) {
-    return <div className="loading">Loading...</div>
   }
 
   return (
-    <div className="dashboard">
-      <h2 style={{ marginBottom: '24px' }}>{t('nodes.title')}</h2>
+    <div className="page">
+      <h2>{t('nodes.title')}</h2>
+      <p className="page__desc">{t('nodes.subtitle')}</p>
 
-      {error && (
-        <div style={{ color: '#e5484d', fontSize: 13, marginBottom: 12 }}>{error}</div>
-      )}
-
-      {newToken && (
-        <div
-          style={{
-            padding: 12,
-            marginBottom: 16,
-            borderRadius: 8,
-            border: '1px solid var(--accent)',
-            fontSize: 13,
-            wordBreak: 'break-all',
-          }}
-        >
-          <strong>{t('nodes.newTokenSaved')}</strong>
-          <div style={{ fontFamily: 'monospace', marginTop: 6 }}>{newToken}</div>
-          <button style={{ marginTop: 8 }} onClick={() => setNewToken(null)}>
-            {t('nodes.tokenSaved')}
-          </button>
+      <div className="stats-grid">
+        <div className="card">
+          <span className="card__label">{t('nodes.total')}</span>
+          <span className="card__value">{nodes.length}</span>
         </div>
-      )}
-
-      <div className="stats-grid" style={{ marginBottom: '32px' }}>
-        <div className="stat-card">
-          <h3>{nodes.length}</h3>
-          <p>{t('nodes.total')}</p>
+        <div className="card">
+          <span className="card__label">{t('nodes.online')}</span>
+          <span className="card__value" style={{ color: 'var(--color-success)' }}>
+            {nodes.filter((n) => n.status === 'online').length}
+          </span>
         </div>
-        <div className="stat-card">
-          <h3>{nodes.filter(n => n.status === 'online').length}</h3>
-          <p>{t('nodes.online')}</p>
-        </div>
-        <div className="stat-card">
-          <h3>{nodes.filter(n => n.status === 'offline').length}</h3>
-          <p>{t('nodes.offline')}</p>
+        <div className="card">
+          <span className="card__label">{t('nodes.offline')}</span>
+          <span className="card__value" style={{ color: 'var(--color-text-muted)' }}>
+            {nodes.filter((n) => n.status === 'offline').length}
+          </span>
         </div>
       </div>
 
+      {newToken && (
+        <div
+          className="badge badge--warning"
+          style={{
+            display: 'block',
+            padding: 'var(--space-3) var(--space-4)',
+            marginBottom: 'var(--space-4)',
+            borderRadius: 'var(--radius-lg)',
+          }}
+        >
+          <strong style={{ color: 'var(--color-text)', display: 'block', marginBottom: 4 }}>
+            {t('nodes.newTokenSaved')}
+          </strong>
+          <div className="mono" style={{ wordBreak: 'break-all', color: 'var(--color-text)' }}>
+            {newToken.token}
+          </div>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+            <button className="btn btn--sm" onClick={copyToken}>
+              <CopyIcon size={12} />
+              <span>{t('common.copy')}</span>
+            </button>
+            <button className="btn btn--sm" onClick={() => setNewToken(null)}>
+              {t('nodes.tokenSaved')}
+            </button>
+          </div>
+        </div>
+      )}
+
       {nodes.length === 0 ? (
-        <div className="empty-state" style={{ minHeight: '300px' }}>
-          <span style={{ fontSize: '48px' }}>🌐</span>
-          <p>{t('nodes.noNodes')}</p>
-          <div style={{ marginTop: '16px', color: 'var(--text-secondary)', textAlign: 'center' }}>
-            <p>{t('nodes.nodeHint')}:</p>
-            <code style={{
-              display: 'block',
-              marginTop: '8px',
-              padding: '12px',
-              background: 'var(--bg-tertiary)',
-              borderRadius: '6px',
-            }}>
-              cd node && python main.py
-            </code>
+        <div className="card" style={{ marginTop: 'var(--space-4)' }}>
+          <div className="state">
+            <div className="state__illustration">
+              <GlobeIcon size={28} />
+            </div>
+            <div className="state__title">{t('nodes.noNodes')}</div>
+            <div className="state__desc">{t('nodes.nodeHint')}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <code className="mono" style={{ background: 'var(--color-bg)', padding: 'var(--space-1) var(--space-2)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                  uv run akm-node login
+                </code>
+                <span className="state__cmd-hint">{t('nodes.firstLoginHint')}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <code className="mono" style={{ background: 'var(--color-bg)', padding: 'var(--space-1) var(--space-2)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                  uv run akm-node
+                </code>
+                <span className="state__cmd-hint">{t('nodes.runHint')}</span>
+              </div>
+            </div>
           </div>
         </div>
       ) : (
-        <div className="nodes-table">
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="card" style={{ padding: 0 }}>
+          <table className="table">
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                <th style={{ padding: '12px', textAlign: 'left' }}>{t('nodes.node')}</th>
-                <th style={{ padding: '12px', textAlign: 'left' }}>{t('nodes.platform')}</th>
-                <th style={{ padding: '12px', textAlign: 'left' }}>{t('nodes.status')}</th>
-                <th style={{ padding: '12px', textAlign: 'left' }}>{t('nodes.lastHeartbeat')}</th>
-                <th style={{ padding: '12px', textAlign: 'right' }}>{t('nodes.actions')}</th>
+              <tr>
+                <th>{t('nodes.node')}</th>
+                <th>{t('nodes.platform')}</th>
+                <th>{t('nodes.status')}</th>
+                <th>{t('nodes.lastHeartbeat')}</th>
+                <th style={{ textAlign: 'right' }}>{t('nodes.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {nodes.map((node) => (
-                <tr key={node.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                  <td style={{ padding: '12px' }}>
-                    <div style={{ fontWeight: 500 }}>{node.name}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{node.id}</div>
+                <tr key={node.id}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                      <span style={{ fontSize: 16 }}>{platformIcon(node.platform)}</span>
+                      <div>
+                        <div style={{ fontWeight: 500 }}>{node.name}</div>
+                        <div className="mono subtle" style={{ fontSize: 11 }}>{node.id}</div>
+                      </div>
+                    </div>
                   </td>
-                  <td style={{ padding: '12px' }}>{getPlatformIcon(node.platform)}</td>
-                  <td style={{ padding: '12px' }}>
-                    <span className={`node-status-badge ${node.status}`}>
-                      {node.status === 'online' ? `🟢 ${t('nodes.online')}` : `⚪ ${t('nodes.offline')}`}
-                    </span>
+                  <td>{platformMap[node.platform] ?? node.platform}</td>
+                  <td>
+                    {node.disabled ? (
+                      <span className="badge badge--muted">
+                        <BanIcon size={12} />
+                        <span>{t('nodes.disabledShort')}</span>
+                      </span>
+                    ) : node.status === 'online' ? (
+                      <span className="badge badge--success">
+                        <CheckIcon size={12} />
+                        <span>{t('nodes.online')}</span>
+                      </span>
+                    ) : (
+                      <span className="badge badge--muted">
+                        <span>{t('nodes.offline')}</span>
+                      </span>
+                    )}
                   </td>
-                  <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>
-                    {formatTime(node.last_heartbeat)}
-                  </td>
-                  <td style={{ padding: '12px', textAlign: 'right' }}>
-                    {admin && (
-                      <>
+                  <td className="muted">{formatRelative(node.last_heartbeat)}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    {admin ? (
+                      <div style={{ display: 'inline-flex', gap: 4 }}>
                         <button
-                          className="btn"
+                          className="icon-btn"
                           onClick={() => handleSync(node.id)}
                           disabled={syncing === node.id || node.status === 'offline'}
-                          style={{ marginRight: '8px' }}
+                          title={t('nodes.sync')}
+                          aria-label={t('nodes.sync')}
                         >
-                          {syncing === node.id ? t('nodes.syncing') : t('nodes.sync')}
+                          <RefreshIcon size={14} />
                         </button>
                         <button
-                          className="btn"
+                          className="icon-btn"
                           onClick={() => handleResetToken(node.id)}
-                          style={{ marginRight: '8px' }}
+                          title={t('nodes.resetToken')}
+                          aria-label={t('nodes.resetToken')}
                         >
-                          {t('nodes.resetToken')}
+                          <KeyIcon size={14} />
                         </button>
                         <button
-                          className="btn"
+                          className="icon-btn"
                           onClick={() => handleToggleDisabled(node)}
-                          style={{ marginRight: '8px', color: node.disabled ? 'var(--accent)' : 'var(--danger)' }}
+                          title={node.disabled ? t('nodes.enable') : t('nodes.disable')}
+                          aria-label={node.disabled ? t('nodes.enable') : t('nodes.disable')}
                         >
-                          {node.disabled ? t('nodes.enable') : t('nodes.disable')}
+                          <BanIcon size={14} />
                         </button>
                         <button
-                          className="btn"
-                          onClick={() => handleDelete(node.id)}
-                          style={{ color: 'var(--danger)' }}
+                          className="icon-btn"
+                          onClick={() => handleDelete(node.id, node.name)}
+                          title={t('nodes.deleteNode')}
+                          aria-label={t('nodes.deleteNode')}
+                          style={{ color: 'var(--color-danger)' }}
                         >
-                          {t('nodes.deleteNode')}
+                          <TrashIcon size={14} />
                         </button>
-                      </>
+                      </div>
+                    ) : (
+                      <span className="muted" style={{ fontSize: 12 }}>{t('nodes.readOnly')}</span>
                     )}
-                    {!admin && <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{t('nodes.readOnly')}</span>}
                   </td>
                 </tr>
               ))}

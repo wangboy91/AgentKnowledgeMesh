@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import Knowledge from './pages/Knowledge'
 import Nodes from './pages/Nodes'
 import Settings from './pages/Settings'
+import { ToastProvider } from './components/Toast'
 import { getSession } from './api/client'
 
 function App() {
@@ -23,20 +24,22 @@ function App() {
     }
   }, [])
 
-  if (!authenticated) {
-    return <LoginPage />
-  }
-
   return (
-    <Routes>
-      <Route path="/" element={<Layout />}>
-        <Route index element={<Dashboard />} />
-        <Route path="knowledge" element={<Knowledge />} />
-        <Route path="knowledge/*" element={<Knowledge />} />
-        <Route path="nodes" element={<Nodes />} />
-        <Route path="settings" element={<Settings />} />
-      </Route>
-    </Routes>
+    <ToastProvider>
+      {!authenticated ? (
+        <LoginPage />
+      ) : (
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="knowledge" element={<Knowledge />} />
+            <Route path="knowledge/*" element={<Knowledge />} />
+            <Route path="nodes" element={<Nodes />} />
+            <Route path="settings" element={<Settings />} />
+          </Route>
+        </Routes>
+      )}
+    </ToastProvider>
   )
 }
 

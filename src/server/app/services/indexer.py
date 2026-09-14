@@ -29,7 +29,7 @@ async def sync_documents(
     scanned: list[ScannedDocument],
     rag_mode: str = "auto",
 ) -> dict:
-    """同步扫描结果到数据库.
+    """同步扫描结果到数据库(仅管理 hub 本机 node_id="local" 的文档).
 
     Args:
         session: 数据库会话
@@ -40,8 +40,10 @@ async def sync_documents(
         同步统计 {created, updated, deleted} 及 vector_ops 载荷
         {upserts, deleted_ids},由调用方决定后台派发。
     """
-    # 获取现有索引
-    result = await session.execute(select(Document))
+    # 只对 hub 本机目录(local)作用域操作,绝不因 hub 扫描结果删改节点文档
+    result = await session.execute(
+        select(Document).where(Document.node_id == "local")
+    )
     existing = {doc.path: doc for doc in result.scalars().all()}
 
     scanned_paths = {doc.path for doc in scanned}

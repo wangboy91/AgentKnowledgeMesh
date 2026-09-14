@@ -1,7 +1,15 @@
+/**
+ * Markdown 编辑器 · 基于 @uiw/react-md-editor,统一外观到 design system
+ * - 顶部 toolbar:文件名 + 修改指示 + 保存/取消
+ * - 中部编辑区(跟随主题切换)
+ * - 底部状态栏:路径、大小、快捷键
+ */
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import MDEditor from '@uiw/react-md-editor'
 import { Document } from '../api/client'
+import { useErrorReporter } from './Toast'
+import { CheckIcon } from './Icon'
 
 interface Props {
   document: Document
@@ -11,87 +19,81 @@ interface Props {
 
 export default function MarkdownEditor({ document, onSave, onCancel }: Props) {
   const { t } = useTranslation()
+  const reportError = useErrorReporter()
   const [content, setContent] = useState(document.content || '')
   const [saving, setSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
 
-  // 监听内容变化
   useEffect(() => {
     setHasChanges(content !== (document.content || ''))
   }, [content, document.content])
 
-  // 保存
   const handleSave = useCallback(async () => {
     if (!hasChanges) return
-
     setSaving(true)
     try {
       await onSave(content)
-    } catch (error) {
-      console.error('Save failed:', error)
-      alert(t('editor.saveFailed', { msg: (error as Error).message }))
+    } catch (err) {
+      reportError(err)
     } finally {
       setSaving(false)
     }
-  }, [content, hasChanges, onSave])
+  }, [content, hasChanges, onSave, reportError])
 
-  // 键盘快捷键
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd/Ctrl + S 保存
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault()
         handleSave()
       }
-      // Escape 取消
-      if (e.key === 'Escape') {
-        onCancel()
-      }
+      if (e.key === 'Escape') onCancel()
     }
-
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleSave, onCancel])
 
   return (
     <div className="editor-container">
-      {/* 工具栏 */}
       <div className="editor-toolbar">
         <div className="editor-info">
           <span className="editor-title">{t('editor.title', { title: document.title })}</span>
           {hasChanges && <span className="editor-changed">{t('editor.modified')}</span>}
         </div>
-
         <div className="editor-actions">
+          <button className="btn" onClick={onCancel} disabled={saving}>
+            {t('editor.cancel')}
+          </button>
           <button
-            className="btn btn-save"
+            className="btn btn--primary"
             onClick={handleSave}
             disabled={!hasChanges || saving}
           >
-            {saving ? t('editor.saving') : t('editor.save')}
-          </button>
-          <button className="btn btn-cancel" onClick={onCancel}>
-            {t('editor.cancel')}
+            {saving ? (
+              <span>{t('editor.saving')}</span>
+            ) : (
+              <>
+                <CheckIcon size={14} />
+                <span>{t('editor.save')}</span>
+              </>
+            )}
           </button>
         </div>
       </div>
 
-      {/* 编辑器 */}
       <div className="editor-body" data-color-mode="auto">
         <MDEditor
           value={content}
           onChange={(val) => setContent(val || '')}
           height="100%"
           preview="live"
-          visibleDragbar={true}
+          visibleDragbar
         />
       </div>
 
-      {/* 状态栏 */}
       <div className="editor-status">
         <span>{t('editor.pathLabel', { path: document.path })}</span>
         <span>{t('editor.sizeLabel', { size: (content.length / 1024).toFixed(1) })}</span>
-        <span>{t('editor.shortcuts')}</span>
+        <span className="muted">{t('editor.shortcuts')}</span>
       </div>
     </div>
   )

@@ -73,8 +73,10 @@ def scan_single_root(
     source_name = root.name
 
     for md_file in root.rglob("*.md"):
-        # 跳过隐藏文件和目录
-        if any(part.startswith(".") for part in md_file.parts):
+        # 跳过根目录内以 "." 开头的文件/目录(隐藏项)
+        # 注意: 必须基于相对路径判断——基于绝对路径时,根目录本身若是隐藏目录
+        # (如 .workbuddy-ai),整个根会被误跳过,导致该知识根不参与扫描
+        if any(part.startswith(".") for part in md_file.relative_to(root).parts):
             continue
 
         # 跳过过大的文件
@@ -84,7 +86,9 @@ def scan_single_root(
 
         try:
             content = md_file.read_text(encoding="utf-8")
-            relative_path = str(md_file.relative_to(root))
+            # 相对路径统一使用 POSIX 分隔符(/),避免 Windows 下产出 \ 混入
+            # 文档路径,导致 URL 导航、树构建与跨端查找不一致(见 akm 路径规范)
+            relative_path = md_file.relative_to(root).as_posix()
 
             # 如果有前缀，加上前缀
             if prefix:

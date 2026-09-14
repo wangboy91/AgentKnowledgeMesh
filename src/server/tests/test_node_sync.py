@@ -401,6 +401,70 @@ async def test_put_documents_new_protocol_no_implicit_delete(db, client, stub_ve
     assert stub_vector_store["delete"] == []
 
 
+async def test_put_documents_normalizes_backslash_paths(db, client, stub_vector_store):
+    """Windows 节点推送的 \\ 分隔路径统一以 / 入库,查询与后续 hash-only 均归一化匹配."""
+    node_id, token = "node-1", "tok-1"
+    await _seed_node(db, node_id, token)
+
+    resp = await client.put(
+        f"/api/nodes/{node_id}/documents",
+        json=_payload([
+            {"path": "docs\\sub\\a.md", "title": "A", "hash": "h1", "size": 2, "content": "hi"},
+            {"path": "docs\\sub\\a.md", "title": "Same", "hash": "h1", "size": 2, "content": "hi"},
+        ]),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"created": 1, "updated": 0, "deleted": 0, "rejected": []}
+
+    docs = await _count_docs(db, node_id)
+    assert len(docs) == 1
+    assert docs[0].path == "docs/sub/a.md"  # 归一化为正斜杠
+    assert docs[0].title == "A"  # 批内重复(归一化后同 path)只取首条,不撞唯一约束
+    # 只派发一次向量嵌入(批内重复未造成二次 add)
+    assert [a["path"] for a in stub_vector_store["add"]] == ["docs/sub/a.md"]
+
+    # 下一轮 hash-only 用正斜杠报路径,应与库中一致跳过
+    resp2 = await client.put(
+        f"/api/nodes/{node_id}/documents",
+        json={"documents": [_hash_only("docs/sub/a.md", "A", "h1", 2)], "deletions": []},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp2.status_code == 200
+    assert resp2.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": []}
+    assert len(await _count_docs(db, node_id)) == 1
+    assert len(stub_vector_store["add"]) == 1  # hash-only 未新增嵌入
+
+
+async def test_put_documents_backslash_dedup_and_delete(db, client, stub_vector_store):
+    """旧版节点继续推送 \\ 路径:hash-only 归一化匹配,deletions 归一化删除."""
+    node_id, token = "node-1", "tok-1"
+    await _seed_node(db, node_id, token)
+    await _seed_document(db, node_id, "docs/a.md", hash_="h1", content="hi")
+
+    # hash-only 用反斜杠路径,不应进入 rejected
+    resp = await client.put(
+        f"/api/nodes/{node_id}/documents",
+        json={"documents": [_hash_only("docs\\a.md", "A", "h1", 2)], "deletions": []},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": []}
+
+    # deletions 用反斜杠路径也应命中归一化后的库中行
+    docs = await _count_docs(db, node_id)
+    a_id = next(d.id for d in docs if d.path == "docs/a.md")
+    resp2 = await client.put(
+        f"/api/nodes/{node_id}/documents",
+        json={"documents": [], "deletions": ["docs\\a.md"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp2.status_code == 200
+    assert resp2.json() == {"created": 0, "updated": 0, "deleted": 1, "rejected": []}
+    assert await _count_docs(db, node_id) == []
+    assert stub_vector_store["delete"] == [a_id]
+
+
 async def test_put_documents_rejected_retransmit_roundtrip(db, client, stub_vector_store):
     """rejected 条目下轮带全文重传:先拒绝,再上传后成功入库(补传闭环)."""
     node_id, token = "node-1", "tok-1"

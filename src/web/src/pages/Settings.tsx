@@ -1,26 +1,37 @@
+/**
+ * 设置页 · RAG 同步模式 + API Token 管理
+ */
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, isAdmin, type ApiTokenInfo } from '../api/client'
+import { useToast, useErrorReporter } from '../components/Toast'
+import {
+  KeyIcon,
+  CopyIcon,
+  TrashIcon,
+  AlertIcon,
+  CheckIcon,
+} from '../components/Icon'
+import { formatDate } from '../utils/format'
 
-/** 设置页:API Token 管理 + RAG 模式(admin) */
 export default function Settings() {
   const { t } = useTranslation()
+  const toast = useToast()
+  const reportError = useErrorReporter()
   const [tokens, setTokens] = useState<ApiTokenInfo[]>([])
   const [name, setName] = useState('')
   const [role, setRole] = useState<'admin' | 'viewer'>('viewer')
-  const [plaintext, setPlaintext] = useState('') // 新建 token 的一次性明文
+  const [plaintext, setPlaintext] = useState('')
   const [ragMode, setRagModeState] = useState<'auto' | 'manual'>('auto')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
   const admin = isAdmin()
 
   const refresh = useCallback(async () => {
     try {
       setTokens(await api.getApiTokens())
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('settings.loadFailed'))
+      reportError(err)
     }
-  }, [t])
+  }, [reportError])
 
   const refreshRagMode = useCallback(async () => {
     try {
@@ -38,162 +49,222 @@ export default function Settings() {
   }, [admin, refresh, refreshRagMode])
 
   async function handleCreate() {
-    if (!name.trim()) return
-    setLoading(true)
-    setError('')
+    if (!admin || !name.trim()) return
     try {
       const created = await api.createApiToken(name.trim(), role)
       setPlaintext(created.token)
       setName('')
+      toast.success(t('settings.created'))
       await refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('settings.createFailed'))
-    } finally {
-      setLoading(false)
+      reportError(err)
     }
   }
 
-  async function handleRevoke(id: number) {
-    if (!confirm(t('settings.revokeConfirm'))) return
-    setError('')
+  async function handleRevoke(token: ApiTokenInfo) {
+    if (!admin) return
+    if (!confirm(t('settings.revokeConfirm', { name: token.name }))) return
     try {
-      await api.revokeApiToken(id)
+      await api.revokeApiToken(token.id)
+      toast.success(t('settings.revokedToast'))
       await refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('settings.revokeFailed'))
+      reportError(err)
     }
   }
 
   async function handleRagMode(mode: 'auto' | 'manual') {
+    if (!admin) return
     if (mode === 'manual' && !confirm(t('settings.ragConfirmManual'))) return
-    setError('')
     try {
       await api.setRagMode(mode)
       setRagModeState(mode)
+      toast.success(t('settings.switchedTo', { mode: t(`settings.rag${mode === 'auto' ? 'Auto' : 'Manual'}`) }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('settings.switchFailed'))
+      reportError(err)
+    }
+  }
+
+  async function copyPlaintext() {
+    if (!plaintext) return
+    try {
+      await navigator.clipboard.writeText(plaintext)
+      toast.success(t('common.copied'))
+    } catch {
+      toast.warning(t('common.copyFailed'))
     }
   }
 
   if (!admin) {
-    return <div className="page"><h2>{t('nav.settings')}</h2><p>{t('settings.adminOnly')}</p></div>
+    return (
+      <div className="page">
+        <h2>{t('nav.settings')}</h2>
+        <div className="card" style={{ marginTop: 'var(--space-3)' }}>
+          <p className="muted">{t('settings.adminOnly')}</p>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="page" style={{ padding: 24, maxWidth: 860 }}>
+    <div className="page">
       <h2>{t('settings.title')}</h2>
-      <p style={{ color: 'var(--text-secondary, #888)', fontSize: 13 }}>
-        {t('settings.desc')}
-      </p>
+      <p className="page__desc">{t('settings.desc')}</p>
 
-      <div
-        style={{
-          padding: 16,
-          margin: '16px 0 24px',
-          borderRadius: 10,
-          border: '1px solid var(--border-color, #ddd)',
-          background: 'var(--bg-tertiary, #fafafa)',
-        }}
-      >
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>{t('settings.ragTitle')}</div>
-        <div style={{ color: 'var(--text-secondary, #888)', fontSize: 13, marginBottom: 12 }}>
-          {t('settings.ragDesc')}
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+      {/* RAG Mode */}
+      <section className="settings-section">
+        <h3>{t('settings.ragTitle')}</h3>
+        <p>{t('settings.ragDesc')}</p>
+        <div className="settings-row">
           <button
+            className={`btn ${ragMode === 'auto' ? 'btn--primary' : ''}`}
             onClick={() => handleRagMode('auto')}
             disabled={ragMode === 'auto'}
-            style={ragMode === 'auto' ? { opacity: 0.6 } : undefined}
           >
-            {ragMode === 'auto' ? `✓ ${t('settings.ragAuto')}` : t('settings.ragAuto')}
+            {ragMode === 'auto' && <CheckIcon size={14} />}
+            <span>{t('settings.ragAuto')}</span>
           </button>
           <button
+            className={`btn ${ragMode === 'manual' ? 'btn--primary' : ''}`}
             onClick={() => handleRagMode('manual')}
             disabled={ragMode === 'manual'}
-            style={ragMode === 'manual' ? { opacity: 0.6 } : undefined}
           >
-            {ragMode === 'manual' ? `✓ ${t('settings.ragManual')}` : t('settings.ragManual')}
+            {ragMode === 'manual' && <CheckIcon size={14} />}
+            <span>{t('settings.ragManual')}</span>
           </button>
         </div>
-      </div>
+      </section>
 
-      <div style={{ display: 'flex', gap: 8, margin: '16px 0' }}>
-        <input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder={t('settings.tokenNamePlaceholder')}
-          style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border-color, #ddd)' }}
-        />
-        <select
-          value={role}
-          onChange={e => setRole(e.target.value as 'admin' | 'viewer')}
-          style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border-color, #ddd)' }}
-        >
-          <option value="viewer">{t('settings.roleViewer')}</option>
-          <option value="admin">{t('settings.roleAdmin')}</option>
-        </select>
-        <button onClick={handleCreate} disabled={loading || !name.trim()}>
-          {t('settings.create')}
-        </button>
-      </div>
-
-      {plaintext && (
-        <div
-          style={{
-            padding: 12,
-            marginBottom: 16,
-            borderRadius: 8,
-            background: 'var(--accent-soft, #eef3ff)',
-            border: '1px solid var(--accent-color, #4f7cff)',
-            fontSize: 13,
-            wordBreak: 'break-all',
-          }}
-        >
-          <strong>{t('settings.saveOnce')}</strong>
-          <div style={{ fontFamily: 'monospace', marginTop: 6 }}>{plaintext}</div>
-          <button style={{ marginTop: 8 }} onClick={() => setPlaintext('')}>
-            {t('settings.savedClose')}
+      {/* Token Create */}
+      <section className="settings-section">
+        <h3>{t('settings.tokenCreate')}</h3>
+        <p>{t('settings.tokenCreateDesc')}</p>
+        <div className="settings-row">
+          <input
+            className="input"
+            style={{ flex: '1 1 240px', minWidth: 200 }}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t('settings.tokenNamePlaceholder')}
+            aria-label={t('settings.tokenNamePlaceholder')}
+          />
+          <select
+            className="select"
+            value={role}
+            onChange={(e) => setRole(e.target.value as 'admin' | 'viewer')}
+            aria-label={t('settings.roleLabel')}
+          >
+            <option value="viewer">{t('settings.roleViewer')}</option>
+            <option value="admin">{t('settings.roleAdmin')}</option>
+          </select>
+          <button
+            className="btn btn--primary"
+            onClick={handleCreate}
+            disabled={!name.trim()}
+          >
+            <KeyIcon size={14} />
+            <span>{t('settings.create')}</span>
           </button>
         </div>
-      )}
 
-      {error && <div style={{ color: '#e5484d', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+        {plaintext && (
+          <div
+            style={{
+              marginTop: 'var(--space-3)',
+              padding: 'var(--space-3)',
+              background: 'var(--color-accent-soft)',
+              border: '1px solid var(--color-accent)',
+              borderRadius: 'var(--radius-lg)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--space-2)' }}>
+              <AlertIcon size={16} />
+              <strong>{t('settings.saveOnce')}</strong>
+            </div>
+            <code
+              className="mono"
+              style={{
+                display: 'block',
+                padding: 'var(--space-2) var(--space-3)',
+                background: 'var(--color-bg)',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border)',
+                wordBreak: 'break-all',
+                fontSize: 13,
+              }}
+            >
+              {plaintext}
+            </code>
+            <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+              <button className="btn btn--sm" onClick={copyPlaintext}>
+                <CopyIcon size={12} />
+                <span>{t('common.copy')}</span>
+              </button>
+              <button className="btn btn--sm" onClick={() => setPlaintext('')}>
+                {t('settings.savedClose')}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
 
-      <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ textAlign: 'left', color: 'var(--text-secondary, #888)' }}>
-            <th style={{ padding: 6 }}>{t('settings.nameCol')}</th>
-            <th style={{ padding: 6 }}>{t('settings.prefixCol')}</th>
-            <th style={{ padding: 6 }}>{t('settings.roleCol')}</th>
-            <th style={{ padding: 6 }}>{t('settings.createdCol')}</th>
-            <th style={{ padding: 6 }}>{t('settings.statusCol')}</th>
-            <th style={{ padding: 6 }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {tokens.map(tr => (
-            <tr key={tr.id} style={{ borderTop: '1px solid var(--border-color, #eee)' }}>
-              <td style={{ padding: 6 }}>{tr.name}</td>
-              <td style={{ padding: 6, fontFamily: 'monospace' }}>{tr.token_prefix}…</td>
-              <td style={{ padding: 6 }}>{tr.role}</td>
-              <td style={{ padding: 6 }}>{tr.created_at?.slice(0, 19).replace('T', ' ')}</td>
-              <td style={{ padding: 6 }}>{tr.revoked ? t('settings.revoked') : t('settings.active')}</td>
-              <td style={{ padding: 6 }}>
-                {!tr.revoked && (
-                  <button onClick={() => handleRevoke(tr.id)}>{t('settings.revoke')}</button>
-                )}
-              </td>
-            </tr>
-          ))}
-          {tokens.length === 0 && (
-            <tr>
-              <td colSpan={6} style={{ padding: 12, color: 'var(--text-secondary, #888)' }}>
-                {t('settings.noTokens')}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      {/* Token List */}
+      <section className="settings-section" style={{ padding: 0 }}>
+        <div style={{ padding: 'var(--space-5)' }}>
+          <h3>{t('settings.tokenList')}</h3>
+          <p style={{ marginBottom: 'var(--space-3)' }}>{t('settings.tokenListDesc')}</p>
+        </div>
+        {tokens.length === 0 ? (
+          <div className="table__empty">{t('settings.noTokens')}</div>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>{t('settings.nameCol')}</th>
+                <th>{t('settings.prefixCol')}</th>
+                <th>{t('settings.roleCol')}</th>
+                <th>{t('settings.createdCol')}</th>
+                <th>{t('settings.statusCol')}</th>
+                <th style={{ textAlign: 'right' }}>{t('nodes.actions')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tokens.map((tr) => (
+                <tr key={tr.id}>
+                  <td><strong>{tr.name}</strong></td>
+                  <td><span className="table__mono">{tr.token_prefix}…</span></td>
+                  <td>
+                    <span className={`badge ${tr.role === 'admin' ? 'badge--accent' : 'badge--muted'}`}>
+                      {tr.role}
+                    </span>
+                  </td>
+                  <td className="muted">{formatDate(tr.created_at, '—')}</td>
+                  <td>
+                    {tr.revoked ? (
+                      <span className="badge badge--danger">{t('settings.revoked')}</span>
+                    ) : (
+                      <span className="badge badge--success">{t('settings.active')}</span>
+                    )}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    {!tr.revoked && (
+                      <button
+                        className="icon-btn"
+                        style={{ color: 'var(--color-danger)' }}
+                        onClick={() => handleRevoke(tr)}
+                        title={t('settings.revoke')}
+                        aria-label={t('settings.revoke')}
+                      >
+                        <TrashIcon size={14} />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
     </div>
   )
 }
