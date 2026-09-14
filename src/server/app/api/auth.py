@@ -12,7 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.models import User
-from app.services.api_tokens import create_token, list_tokens, purge_token, revoke_token
+from app.services.api_tokens import (
+    create_token,
+    list_tokens,
+    purge_token,
+    revoke_token,
+    rotate_token,
+)
 from app.services.auth import (
     create_access_token,
     hash_password,
@@ -176,6 +182,18 @@ async def get_tokens(
     return await list_tokens(session)
 
 
+def _token_payload(token, plaintext: str) -> dict:
+    """Token 响应体(含一次性明文)."""
+    return {
+        "id": token.id,
+        "name": token.name,
+        "token_prefix": token.token_prefix,
+        "role": token.role,
+        "created_at": token.created_at.isoformat() if token.created_at else None,
+        "token": plaintext,
+    }
+
+
 @router.post("/tokens")
 async def post_token(
     body: TokenCreateRequest,
@@ -186,15 +204,28 @@ async def post_token(
     if body.role not in ("admin", "viewer"):
         raise HTTPException(status_code=400, detail="role 必须为 admin 或 viewer")
     token, plaintext = await create_token(session, body.name, body.role, principal.username)
-    data = {
-        "id": token.id,
-        "name": token.name,
-        "token_prefix": token.token_prefix,
-        "role": token.role,
-        "created_at": token.created_at.isoformat() if token.created_at else None,
-        "token": plaintext,
-    }
-    return data
+    return _token_payload(token, plaintext)
+
+
+@router.post("/tokens/{token_id}/rotate")
+async def rotate_token_endpoint(
+    token_id: int,
+    principal=Depends(require_auth("admin")),
+    session: AsyncSession = Depends(get_session),
+):
+    """轮换 API Token:同一记录换发新密钥,旧密钥立即失效(admin).
+
+    明文仅本次返回。记录本身保持有效(id / 名称 / 角色不变),
+    不会像「吊销 + 新建」那样留下一条"已吊销"的残留记录。
+    """
+    try:
+        result = await rotate_token(session, token_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Token 不存在")
+    token, plaintext = result
+    return _token_payload(token, plaintext)
 
 
 @router.delete("/tokens/{token_id}")

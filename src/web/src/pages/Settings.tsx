@@ -13,8 +13,16 @@ import {
   AlertIcon,
   CheckIcon,
   BanIcon,
+  RefreshIcon,
 } from '../components/Icon'
 import { formatDate } from '../utils/format'
+
+/** 一次性展示的密钥(创建 / 轮换都会产生) */
+interface IssuedSecret {
+  secret: string
+  name: string
+  action: 'create' | 'rotate'
+}
 
 export default function Settings() {
   const { t } = useTranslation()
@@ -23,7 +31,7 @@ export default function Settings() {
   const [tokens, setTokens] = useState<ApiTokenInfo[]>([])
   const [name, setName] = useState('')
   const [role, setRole] = useState<'admin' | 'viewer'>('viewer')
-  const [plaintext, setPlaintext] = useState('')
+  const [issued, setIssued] = useState<IssuedSecret | null>(null)
   const [ragMode, setRagModeState] = useState<'auto' | 'manual'>('auto')
   const [showRevoked, setShowRevoked] = useState(false)
   const admin = isAdmin()
@@ -60,9 +68,22 @@ export default function Settings() {
     if (!admin || !name.trim()) return
     try {
       const created = await api.createApiToken(name.trim(), role)
-      setPlaintext(created.token)
+      setIssued({ secret: created.token, name: created.name, action: 'create' })
       setName('')
       toast.success(t('settings.created'))
+      await refresh()
+    } catch (err) {
+      reportError(err)
+    }
+  }
+
+  async function handleRotate(token: ApiTokenInfo) {
+    if (!admin) return
+    if (!confirm(t('settings.rotateConfirm', { name: token.name }))) return
+    try {
+      const rotated = await api.rotateApiToken(token.id)
+      setIssued({ secret: rotated.token, name: rotated.name, action: 'rotate' })
+      toast.success(t('settings.rotatedToast'))
       await refresh()
     } catch (err) {
       reportError(err)
@@ -106,9 +127,9 @@ export default function Settings() {
   }
 
   async function copyPlaintext() {
-    if (!plaintext) return
+    if (!issued) return
     try {
-      await navigator.clipboard.writeText(plaintext)
+      await navigator.clipboard.writeText(issued.secret)
       toast.success(t('common.copied'))
     } catch {
       toast.warning(t('common.copyFailed'))
@@ -190,7 +211,7 @@ export default function Settings() {
           </button>
         </div>
 
-        {plaintext && (
+        {issued && (
           <div
             style={{
               marginTop: 'var(--space-3)',
@@ -202,7 +223,14 @@ export default function Settings() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--space-2)' }}>
               <AlertIcon size={16} />
-              <strong>{t('settings.saveOnce')}</strong>
+              <strong>
+                {issued.action === 'rotate'
+                  ? t('settings.saveOnceRotated')
+                  : t('settings.saveOnce')}
+              </strong>
+              <span className="muted">
+                {t('settings.issuedFor', { name: issued.name })}
+              </span>
             </div>
             <code
               className="mono"
@@ -216,14 +244,19 @@ export default function Settings() {
                 fontSize: 13,
               }}
             >
-              {plaintext}
+              {issued.secret}
             </code>
+            {issued.action === 'rotate' && (
+              <p className="muted" style={{ margin: 'var(--space-2) 0 0' }}>
+                {t('settings.rotateHint')}
+              </p>
+            )}
             <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
               <button className="btn btn--sm" onClick={copyPlaintext}>
                 <CopyIcon size={12} />
                 <span>{t('common.copy')}</span>
               </button>
-              <button className="btn btn--sm" onClick={() => setPlaintext('')}>
+              <button className="btn btn--sm" onClick={() => setIssued(null)}>
                 {t('settings.savedClose')}
               </button>
             </div>
@@ -265,6 +298,7 @@ export default function Settings() {
               : t('settings.noTokens')}
           </div>
         ) : (
+          <div className="table-scroll">
           <table className="table">
             <thead>
               <tr>
@@ -294,33 +328,46 @@ export default function Settings() {
                       <span className="badge badge--success">{t('settings.active')}</span>
                     )}
                   </td>
-                  <td style={{ textAlign: 'right' }}>
-                    {!tr.revoked ? (
-                      <button
-                        className="icon-btn"
-                        style={{ color: 'var(--color-danger)' }}
-                        onClick={() => handleRevoke(tr)}
-                        title={t('settings.revoke')}
-                        aria-label={t('settings.revoke')}
-                      >
-                        <BanIcon size={14} />
-                      </button>
-                    ) : (
-                      <button
-                        className="icon-btn"
-                        style={{ color: 'var(--color-danger)' }}
-                        onClick={() => handlePurge(tr)}
-                        title={t('settings.purge')}
-                        aria-label={t('settings.purge')}
-                      >
-                        <TrashIcon size={14} />
-                      </button>
-                    )}
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <span className="row" style={{ justifyContent: 'flex-end' }}>
+                      {!tr.revoked ? (
+                        <>
+                          <button
+                            className="icon-btn"
+                            onClick={() => handleRotate(tr)}
+                            title={t('settings.rotate')}
+                            aria-label={t('settings.rotate')}
+                          >
+                            <RefreshIcon size={14} />
+                          </button>
+                          <button
+                            className="icon-btn"
+                            style={{ color: 'var(--color-danger)' }}
+                            onClick={() => handleRevoke(tr)}
+                            title={t('settings.revoke')}
+                            aria-label={t('settings.revoke')}
+                          >
+                            <BanIcon size={14} />
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className="icon-btn"
+                          style={{ color: 'var(--color-danger)' }}
+                          onClick={() => handlePurge(tr)}
+                          title={t('settings.purge')}
+                          aria-label={t('settings.purge')}
+                        >
+                          <TrashIcon size={14} />
+                        </button>
+                      )}
+                    </span>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </div>

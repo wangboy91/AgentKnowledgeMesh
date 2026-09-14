@@ -202,6 +202,65 @@ async def test_api_token_lifecycle(db, client, principals):
     assert resp.status_code == 401
 
 
+async def test_api_token_rotate_endpoint(db, client, principals):
+    """路由级闭环:轮换后新密钥可用、旧密钥 401,且列表里不产生"已吊销"残留。"""
+    headers = principals["admin"]
+    resp = await client.post(
+        "/api/auth/tokens", json={"name": "ci-rotate", "role": "viewer"}, headers=headers
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    token_id, old_secret = body["id"], body["token"]
+
+    # 轮换前旧密钥可用
+    resp = await client.get(
+        "/api/context", params={"q": "x"}, headers={"Authorization": "Bearer " + old_secret}
+    )
+    assert resp.status_code == 200
+
+    # 轮换:同一条记录换发新密钥
+    resp = await client.post("/api/auth/tokens/%d/rotate" % token_id, headers=headers)
+    assert resp.status_code == 200
+    rotated = resp.json()
+    new_secret = rotated["token"]
+    assert rotated["id"] == token_id
+    assert rotated["name"] == "ci-rotate"
+    assert new_secret != old_secret
+    assert new_secret.startswith("akm_")
+
+    # 闭环:新密钥可用、旧密钥立即失效
+    resp = await client.get(
+        "/api/context", params={"q": "x"}, headers={"Authorization": "Bearer " + new_secret}
+    )
+    assert resp.status_code == 200
+    resp = await client.get(
+        "/api/context", params={"q": "x"}, headers={"Authorization": "Bearer " + old_secret}
+    )
+    assert resp.status_code == 401
+
+    # 列表:仍只有一条记录,且状态是"有效"(不产生"已吊销"残留)
+    resp = await client.get("/api/auth/tokens", headers=headers)
+    rows = [r for r in resp.json() if r["id"] == token_id]
+    assert len(rows) == 1
+    assert rows[0]["revoked"] is False
+
+    # 已吊销的 Token 不允许轮换
+    resp = await client.delete("/api/auth/tokens/%d" % token_id, headers=headers)
+    assert resp.status_code == 200
+    resp = await client.post("/api/auth/tokens/%d/rotate" % token_id, headers=headers)
+    assert resp.status_code == 400
+
+
+async def test_api_token_rotate_missing(db, client, principals):
+    resp = await client.post("/api/auth/tokens/99999/rotate", headers=principals["admin"])
+    assert resp.status_code == 404
+
+
+async def test_api_token_rotate_requires_admin(db, client, principals):
+    resp = await client.post("/api/auth/tokens/1/rotate", headers=principals["viewer"])
+    assert resp.status_code == 403
+
+
 async def test_node_register_rotation(db, client, principals):
     headers = principals["admin"]
     resp = await client.post(

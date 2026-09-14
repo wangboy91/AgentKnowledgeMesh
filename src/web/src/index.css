@@ -1314,26 +1314,272 @@ code, pre, kbd { font-family: var(--font-mono); }
 .editor-body .w-md-editor-preview { border-left: 1px solid var(--color-border); }
 
 /* ==========================================================================
-   Responsive
+   Responsive · Mobile-first additions
+   Breakpoints: 480px (phone), 768px (tablet), 1024px (desktop)
+   PC 交互 (≥1024px) 保持不变;所有优化集中在 < 1024px
    ========================================================================== */
 /* 移动端 / 抽屉切换按钮仅在 < 1024px 时可见 */
 .app .topbar .lg-only-toggle { display: none; }
 
+/* --- Sidebar drawer overlay (mobile) --- */
+.sidebar-overlay {
+  display: none;
+}
+
+/* --- Mobile tree pane: hidden by default (desktop) --- */
+.tree-pane--mobile { display: none; }
+
+/* --- Mobile topbar search toggle --- */
+.topbar__search-mobile-toggle { display: none; }
+
 @media (max-width: 1023px) {
+  /* === App grid: collapse sidebar column === */
   .app {
-    grid-template-columns: 0 1fr;
+    grid-template-columns: 0 0 1fr;
   }
+  .resize-handle { display: none; }
+
+  /* === Sidebar → fixed drawer === */
   .app-sidebar {
     position: fixed;
     top: 0; left: 0; bottom: 0;
     width: var(--sidebar-w);
-    z-index: 50;
+    max-width: 85vw;
+    z-index: 60;
     transform: translateX(-100%);
-    transition: transform 0.2s;
+    transition: transform 0.25s ease;
   }
   .app-sidebar.is-open { transform: translateX(0); box-shadow: var(--shadow-lg); }
-  .tree-pane { display: none; }
+
+  /* === Overlay backdrop === */
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 55;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  .sidebar-overlay.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* === Tree pane: desktop variant hidden, mobile variant = drawer === */
+  .tree-pane--desktop { display: none; }
+  .tree-pane--mobile { display: flex; }
+  .tree-pane {
+    position: fixed;
+    top: var(--topbar-h);
+    left: 0; right: 0; bottom: 0;
+    width: 100%;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    border-right: none;
+    border-top: 1px solid var(--color-border);
+    background: var(--color-surface-1);
+  }
+  .tree-pane.is-mobile-open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* === Topbar toggles visible === */
   .app .topbar .lg-only-toggle { display: inline-flex; }
+  .topbar__search-mobile-toggle { display: inline-flex; }
+
+  /* === Topbar: hide breadcrumbs on phone, keep on tablet === */
+  .topbar__breadcrumbs { display: none; }
+  .topbar {
+    padding: 0 var(--space-2);
+    gap: var(--space-2);
+  }
+
+  /* === Search: collapsed by default, expands when active === */
+  .search {
+    position: absolute;
+    top: 0;
+    left: 0; right: 0;
+    height: var(--topbar-h);
+    max-width: none;
+    background: var(--color-surface-1);
+    z-index: 20;
+    padding: 0 var(--space-2);
+    align-items: center;
+    gap: var(--space-1);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    border-bottom: 1px solid transparent;
+  }
+  .search.is-mobile-active {
+    opacity: 1;
+    pointer-events: auto;
+    border-bottom-color: var(--color-border);
+  }
+  .search__input {
+    height: 32px;
+  }
+  .search__dropdown {
+    position: fixed;
+    top: calc(var(--topbar-h) + 4px);
+    left: var(--space-2);
+    right: var(--space-2);
+    max-height: 60vh;
+  }
+
+  /* === Page: reduce padding === */
+  .page {
+    padding: var(--space-4) var(--space-3);
+  }
+
+  /* === Stats grid: single column on phone === */
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  /* === Doc body: reduce padding === */
+  .doc-body {
+    padding: var(--space-4) var(--space-3);
+  }
+  .doc-body--wide {
+    max-width: 100%;
+  }
+
+  /* === Doc header: tighter spacing === */
+  .doc-header {
+    margin-bottom: var(--space-4);
+    padding-bottom: var(--space-3);
+  }
+  .doc-header h1 {
+    font-size: 22px;
+    line-height: 1.35;
+  }
+
+  /* === Markdown typography: slightly smaller on mobile === */
+  .markdown-body {
+    font-size: var(--text-base-size);
+    line-height: 1.65;
+  }
+  .markdown-body h1 { font-size: 22px; }
+  .markdown-body h2 { font-size: 19px; }
+  .markdown-body h3 { font-size: 16px; }
+  .markdown-body h4 { font-size: 15px; }
+  .markdown-body pre {
+    padding: var(--space-3);
+    font-size: var(--text-xs-size);
+    border-radius: var(--radius-md);
+  }
+  .markdown-body ul,
+  .markdown-body ol {
+    padding-left: var(--space-4);
+  }
+  .markdown-body table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .markdown-body blockquote {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* === Tables: horizontal scroll wrapper === */
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* === Toast: full-width bottom on mobile === */
+  .toast-host {
+    left: var(--space-2);
+    right: var(--space-2);
+    bottom: var(--space-3);
+  }
+  .toast {
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+  }
+
+  /* === Editor: stack toolbar vertically === */
+  .editor-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+  .editor-info { justify-content: space-between; }
+  .editor-actions { justify-content: flex-end; }
+  .editor-status {
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* === Settings: stack rows === */
+  .settings-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+  .settings-row .input,
+  .settings-row .select,
+  .settings-row .btn {
+    width: 100%;
+  }
+  .settings-section {
+    padding: var(--space-3);
+  }
+
+  /* === Card: reduce padding === */
+  .card {
+    padding: var(--space-3);
+  border-radius: var(--radius-md);
+  }
+
+  /* === State: reduce padding === */
+  .state {
+    padding: var(--space-4);
+  min-height: 200px;
+  gap: var(--space-3);
+  height: auto;
+    flex: 1;
+  }
+  .state__illustration { width: 64px; height: 64px; }
+  .state__illustration svg { width: 32px; height: 32px; }
+}
+
+/* --- Phone (≤480px): even tighter --- */
+@media (max-width: 480px) {
+  .page {
+    padding: var(--space-3) var(--space-2);
+  }
+  .doc-body {
+    padding: var(--space-3) var(--space-2);
+  }
+  .doc-header h1 {
+    font-size: 20px;
+  }
+  .markdown-body { font-size: 13px; }
+  .markdown-body h1 { font-size: 20px; }
+  .markdown-body h2 { font-size: 17px; }
+  .markdown-body pre { font-size: 11px; }
+
+  /* Hide doc-header meta items that are less critical */
+  .doc-header__meta-item { gap: 3px; }
+  .doc-header__meta-item .truncate { max-width: 120px; }
+
+  /* Doc toolbar: full-width buttons */
+  .doc-toolbar {
+    padding: var(--space-2) var(--space-3);
+  }
+  .doc-toolbar .btn {
+    flex: 1;
+  }
 }
 
 @media (min-width: 1024px) and (max-width: 1279px) {

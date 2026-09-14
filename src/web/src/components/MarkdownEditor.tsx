@@ -24,6 +24,19 @@ export default function MarkdownEditor({ document, onSave, onCancel }: Props) {
   const [saving, setSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
 
+  // Detect mobile for editor preview mode
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  )
+
+  useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth < 768)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   useEffect(() => {
     setHasChanges(content !== (document.content || ''))
   }, [content, document.content])
@@ -85,8 +98,8 @@ export default function MarkdownEditor({ document, onSave, onCancel }: Props) {
           value={content}
           onChange={(val) => setContent(val || '')}
           height="100%"
-          preview="live"
-          visibleDragbar
+          preview={isMobile ? 'edit' : 'live'}
+          visibleDragbar={!isMobile}
         />
       </div>
 

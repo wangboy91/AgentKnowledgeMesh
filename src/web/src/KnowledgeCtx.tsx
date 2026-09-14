@@ -7,12 +7,18 @@ interface KnowledgeCtxValue {
   treeVisible: boolean
   /** 切换 tree pane 显隐 */
   toggleTree: () => void
+  /** Mobile tree drawer open state */
+  mobileTreeOpen: boolean
+  /** Close mobile tree drawer (used by file navigation links) */
+  closeMobileTree: () => void
 }
 
 const KnowledgeCtx = createContext<KnowledgeCtxValue>({
   selectedNodeId: null,
   treeVisible: true,
   toggleTree: () => {},
+  mobileTreeOpen: false,
+  closeMobileTree: () => {},
 })
 
 export const KnowledgeProvider = KnowledgeCtx.Provider
@@ -28,4 +34,14 @@ export function useTreeVisible() {
 }
 export function useToggleTree() {
   return useContext(KnowledgeCtx).toggleTree
+}
+
+/** Mobile tree drawer open state */
+export function useMobileTreeOpen() {
+  return useContext(KnowledgeCtx).mobileTreeOpen
+}
+
+/** Close mobile tree drawer */
+export function useCloseMobileTree() {
+  return useContext(KnowledgeCtx).closeMobileTree
 }

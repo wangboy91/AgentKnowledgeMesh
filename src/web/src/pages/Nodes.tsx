@@ -191,6 +191,7 @@ export default function Nodes() {
         </div>
       ) : (
         <div className="card" style={{ padding: 0 }}>
+          <div className="table-scroll">
           <table className="table">
             <thead>
               <tr>
@@ -278,6 +279,7 @@ export default function Nodes() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

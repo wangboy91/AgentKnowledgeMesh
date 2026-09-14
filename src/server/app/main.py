@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from app.api import router
 from app.config import BASE_DIR, settings
@@ -80,6 +81,10 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # 响应压缩(大 JSON 树/文档体积显著下降;SSE/MCP 长连接由 starlette
+    # 对 text/event-stream 跳过压缩,不受影响)
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     # API 路由
     app.include_router(router, prefix="/api")

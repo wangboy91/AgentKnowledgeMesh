@@ -19,6 +19,8 @@ import {
   LogoutIcon,
   CollapseIcon,
   ExpandIcon,
+  SearchIcon,
+  XIcon,
 } from './Icon'
 
 const DEFAULT_SIDEBAR_WIDTH = 240
@@ -54,6 +56,11 @@ export default function Layout() {
     return localStorage.getItem('akm.tree.visible') !== 'collapsed'
   })
   const toggleTree = useCallback(() => {
+    // On mobile, toggle the mobile tree drawer instead of the desktop pane
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setMobileTreeOpen((v) => !v)
+      return
+    }
     setTreeVisible((v) => {
       const next = !v
       localStorage.setItem('akm.tree.visible', next ? 'visible' : 'collapsed')
@@ -63,6 +70,8 @@ export default function Layout() {
 
   const [lang, setLangState] = useState<Lang>(getLang())
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [mobileTreeOpen, setMobileTreeOpen] = useState(false)
+  const [mobileSearchActive, setMobileSearchActive] = useState(false)
 
   function handleLang(next: Lang) {
     setLang(next)
@@ -77,6 +86,8 @@ export default function Layout() {
   // 路由变化时关闭移动端抽屉
   useEffect(() => {
     setSidebarOpen(false)
+    setMobileTreeOpen(false)
+    setMobileSearchActive(false)
   }, [location.pathname])
 
   // 顶部 breadcrumb · 根据当前路径推导
@@ -199,6 +210,13 @@ export default function Layout() {
         )}
       </aside>
 
+      {/* Mobile overlay backdrop (sidebar + tree drawer) */}
+      <div
+        className={`sidebar-overlay ${sidebarOpen || mobileTreeOpen ? 'is-visible' : ''}`}
+        onClick={() => { setSidebarOpen(false); setMobileTreeOpen(false) }}
+        aria-hidden="true"
+      />
+
       {/* ========================== Resize Handle ========================== */}
       <ResizeHandle
         onResize={handleResize}
@@ -208,7 +226,7 @@ export default function Layout() {
 
       {/* ========================== Main ========================== */}
       <main className="app-main">
-        <KnowledgeProvider value={{ selectedNodeId, treeVisible, toggleTree }}>
+        <KnowledgeProvider value={{ selectedNodeId, treeVisible, toggleTree, mobileTreeOpen, closeMobileTree: () => setMobileTreeOpen(false) }}>
           {/* Topbar */}
           <div className="topbar">
             <button
@@ -255,7 +273,22 @@ export default function Layout() {
 
             <div className="topbar__spacer" />
 
-            {isKnowledge && <SearchBar />}
+            {isKnowledge && (
+              <>
+                {/* Mobile search toggle (shows search bar overlay on phone) */}
+                <button
+                  className="icon-btn icon-btn--ghost topbar__search-mobile-toggle"
+                  onClick={() => setMobileSearchActive((v) => !v)}
+                  aria-label={t('search.semanticPh')}
+                  title={t('search.semanticPh')}
+                >
+                  {mobileSearchActive ? <XIcon /> : <SearchIcon />}
+                </button>
+                <div className={mobileSearchActive ? 'search is-mobile-active' : 'search'}>
+                  <SearchBar onResultClick={() => setMobileSearchActive(false)} />
+                </div>
+              </>
+            )}
           </div>
 
           {/* Content */}

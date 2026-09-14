@@ -41,7 +41,8 @@ api_tokens: id(PK), name, token_hash(sha256), role("viewer"|"admin"),
 ```
 
 - 密码哈希:`bcrypt`(新增依赖 `passlib[bcrypt]`;若引入成本高,退而用 `hashlib.pbkdf2_hmac` 自实现,二选一在 proposal 定稿)
-- API Token 供 Agent/脚本长期使用;**只存哈希**,明文仅在创建时返回一次
+- API Token 供 Agent/脚本长期使用;**只存哈希**,明文仅在创建/轮换时返回一次
+- API Token 生命周期:`create` → `rotate`(同一记录换发新密钥,旧密钥立即失效,不留"已吊销"记录) → `revoke`(软删,保留 `revoked_at` 审计) → `purge`(硬删,仅限已吊销)
 
 ### 2.2 初始化
 
@@ -55,7 +56,7 @@ api_tokens: id(PK), name, token_hash(sha256), role("viewer"|"admin"),
 | 凭证 | 用途 | 形态 | 有效期 |
 | --- | --- | --- | --- |
 | JWT | Web 登录会话 | `POST /api/auth/login` → `{access_token}`;HS256;`AKM_SECRET_KEY`(未配置则首次生成存 `data/secret.key`) | 24h,无刷新(过期重登,P1 足够) |
-| API Token | Agent/脚本调 Context API、MCP SSE | `Authorization: Bearer akm_xxx` | 永久,可吊销 |
+| API Token | Agent/脚本调 Context API、MCP SSE | `Authorization: Bearer akm_xxx` | 永久,可轮换/吊销 |
 | Node Token | 节点机器身份(§3) | 节点本地凭证文件 | 永久,可吊销/重置 |
 
 ### 2.4 端点保护矩阵

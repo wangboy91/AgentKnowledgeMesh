@@ -11,7 +11,12 @@ import { SearchIcon, SparkleIcon } from './Icon'
 
 type Mode = 'semantic' | 'keyword'
 
-export default function SearchBar() {
+interface SearchBarProps {
+  /** Called when a search result is selected (used to close mobile search overlay) */
+  onResultClick?: () => void
+}
+
+export default function SearchBar({ onResultClick }: SearchBarProps = {}) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<RagSearchResult[]>([])
@@ -74,6 +79,7 @@ export default function SearchBar() {
     navigate(`/knowledge/${result.path}`)
     setQuery('')
     setShowResults(false)
+    onResultClick?.()
   }
 
   function toggleMode() {

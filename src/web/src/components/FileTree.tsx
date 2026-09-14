@@ -1,18 +1,8 @@
-/**
- * 文件树 — 选中节点 + 当前选中文档高亮 + RAG 状态徽章 + 勾选模式批量操作
- *
- * 工具栏分两排:
- *   - 过滤行:状态过滤 + 全部展开/收起
- *   - 操作行:批量加入 RAG / 批量移除 RAG / 扫描
- *
- * 批量操作为"勾选模式":
- *   点批量按钮 → 进入 selectMode(对应方向),文件行出现 checkbox
- *   选完后按确认按钮执行,或再次点同一按钮 = 取消
- */
+import { useRef } from 'react'
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { api, isAdmin, Document } from '../api/client'
+import { api, isAdmin } from '../api/client'
 import { useSelectedNodeId } from '../KnowledgeCtx'
 import {
   FolderIcon,
@@ -32,9 +22,18 @@ import {
 import EmptyState from './EmptyState'
 import { useToast, useErrorReporter } from './Toast'
 
+/**
+ * 折叠懒加载文件树:展开某目录时按 dir 切片请求其一层直接子项,
+ * 传输量 O(可见目录)而非 O(全量文档)。目录内容缓存在本地
+ * (childrenByDir),切走节点后清空;「全部展开」回退到一次全量请求。
+ * 注意:RAG 状态 filter 作用于"已加载且已展开"的范围。
+ */
+
 interface TreeNode {
-  [key: string]: TreeNode | { _title: string; _path: string; _rag_status?: string }
+  [key: string]: TreeNode | { _title: string; _path: string; _rag_status?: string; id: number }
 }
+
+type DirChildren = Record<string, Record<string, any>>
 
 const RAG_STATUS: Record<
   string,
@@ -46,19 +45,6 @@ const RAG_STATUS: Record<
 }
 
 type SelectMode = null | 'add' | 'remove'
-
-function collectAllDirs(node: TreeNode, prefix = ''): string[] {
-  const dirs: string[] = []
-  for (const [name, value] of Object.entries(node)) {
-    if (name.startsWith('_')) continue
-    if (!(value as any)._path) {
-      const p = prefix ? `${prefix}/${name}` : name
-      dirs.push(p)
-      dirs.push(...collectAllDirs(value as TreeNode, p))
-    }
-  }
-  return dirs
-}
 
 function loadExpanded(key: string): string[] {
   try {
@@ -85,6 +71,27 @@ function ancestorDirs(filePath: string | undefined): string[] {
     dirs.push(parts.slice(0, i + 1).join('/'))
   }
   return dirs
+}
+
+/** 把全量树拆成平铺的一层一层子项(供「全部展开」一次加载后使用) */
+function decompose(full: Record<string, any>): { byDir: DirChildren; allDirs: string[] } {
+  const byDir: DirChildren = {}
+  const allDirs: string[] = []
+  const walk = (node: Record<string, any>, curDir: string) => {
+    const children: Record<string, any> = {}
+    byDir[curDir] = children
+    if (curDir) allDirs.push(curDir)
+    for (const [name, value] of Object.entries(node)) {
+      if ((value as any)._path) {
+        children[name] = value // 叶子原样(incl. id)
+      } else {
+        children[name] = {}
+        walk(value, curDir ? `${curDir}/${name}` : name)
+      }
+    }
+  }
+  walk(full, '')
+  return { byDir, allDirs }
 }
 
 interface Props {
@@ -129,20 +136,25 @@ export default function FileTree(props: Props) {
         })
       }
 
-  const [tree, setTree] = useState<TreeNode>({})
-  const [docs, setDocs] = useState<Document[]>([])
-  const [loading, setLoading] = useState(true)
+  // ---- 懒加载数据(平铺目录缓存)----
+  const [cache, setCache] = useState<DirChildren>({})
+  const cacheRef = useRef<DirChildren>({})
+  const inflightRef = useRef<Record<string, Promise<void>>>({})
+  // 每目录代际:reload/切节点时递增,使在途旧响应失效(不依赖 promise 自比较)
+  const epochRef = useRef<Record<string, number>>({})
+  const nodeRef = useRef<string | null>(selectedNodeId)
+  const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
   const [busy, setBusy] = useState(false)
 
   // 勾选模式
   const [selectMode, setSelectMode] = useState<SelectMode>(null)
-  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [picked, setPicked] = useState<Map<string, number>>(new Map()) // path -> doc id
 
   // 退出勾选模式
   const exitSelectMode = useCallback(() => {
     setSelectMode(null)
-    setPicked(new Set())
+    setPicked(new Map())
   }, [])
 
   // 进入 / 切换 勾选模式(点同一个按钮退出)
@@ -151,41 +163,86 @@ export default function FileTree(props: Props) {
       exitSelectMode()
     } else {
       setSelectMode(mode)
-      setPicked(new Set())
+      setPicked(new Map())
     }
   }
 
-  function togglePick(path: string) {
+  function togglePick(path: string, id: number | undefined) {
     setPicked((prev) => {
-      const next = new Set(prev)
+      const next = new Map(prev)
       if (next.has(path)) next.delete(path)
-      else next.add(path)
+      else if (id !== undefined) next.set(path, id)
       return next
     })
   }
 
-  // 数据加载仅随选中节点变化——点击文档会改 URL(activePath),
-  // 若把 activePath 放进依赖,每次点选都会整树重拉(loading 闪烁)
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [t1, d] = await Promise.all([
-        api.getDocumentTree(selectedNodeId ?? undefined),
-        api.getDocuments(selectedNodeId ?? undefined),
-      ])
-      setTree(t1)
-      setDocs(d)
-    } catch (err) {
-      reportError(err)
-    } finally {
-      setLoading(false)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNodeId])
+  /**
+   * 加载并缓存一个目录的一层子项。幂等:
+   * - 已缓存/T在途中 → 复用;完成后仅当"节点未切换且代际未变"才写缓存
+   */
+  const loadDir = useCallback(
+    (dir: string): Promise<void> => {
+      if (dir in cacheRef.current) return Promise.resolve()
+      if (dir in inflightRef.current) return inflightRef.current[dir]!
 
+      const nodeId = nodeRef.current
+      const epoch = (epochRef.current[dir] ?? 0) + 1
+      epochRef.current[dir] = epoch
+      const req = (async () => {
+        setLoadingDirs((prev) => new Set(prev).add(dir))
+        try {
+          const data = await api.getDocumentTree(nodeId ?? undefined, dir)
+          if (nodeRef.current !== nodeId) return // 节点已切换,丢弃
+          if (epochRef.current[dir] !== epoch) return // 已被 reload 作废,丢弃
+          cacheRef.current[dir] = data
+          setCache({ ...cacheRef.current })
+        } catch (err) {
+          if (epochRef.current[dir] === epoch) reportError(err)
+        } finally {
+          setLoadingDirs((prev) => {
+            const next = new Set(prev)
+            next.delete(dir)
+            return next
+          })
+          if (epochRef.current[dir] === epoch) delete inflightRef.current[dir]
+        }
+      })()
+      inflightRef.current[dir] = req
+      return req
+    },
+    [reportError]
+  )
+
+  /** 作废并重载指定目录(代际+1,旧响应不会回写)。用于 RAG 操作 / 扫描 / 刷新 */
+  const reloadDirs = useCallback(
+    (dirs: string[]) => {
+      if (!dirs.length) return Promise.resolve()
+      for (const d of dirs) {
+        delete cacheRef.current[d]
+        delete inflightRef.current[d]
+        epochRef.current[d] = (epochRef.current[d] ?? 0) + 1
+      }
+      setCache({ ...cacheRef.current })
+      return Promise.all(dirs.map((d) => loadDir(d))).then(() => {})
+    },
+    [loadDir]
+  )
+
+  // 切节点:重置缓存、在途与代际,拉根切片(只取第一层,空节点据此显示扫描引导)
   useEffect(() => {
-    load()
-  }, [load])
+    nodeRef.current = selectedNodeId
+    cacheRef.current = {}
+    inflightRef.current = {}
+    epochRef.current = {}
+    setCache({})
+    void loadDir('')
+  }, [selectedNodeId, loadDir])
+
+  // 惰性拉取:展开集里的目录按需加载(覆盖:点目录展开、首屏恢复展开集、
+  // 搜索跳转/URL 直连深层自动逐层展开)
+  useEffect(() => {
+    for (const d of exp) void loadDir(d)
+  }, [exp, loadDir])
 
   // 从搜索结果/URL 跳转到文档时,把该文件的祖先目录补进展开集
   // (只改展开状态,不再触发数据请求)
@@ -211,15 +268,18 @@ export default function FileTree(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNodeId, activePath])
 
-  async function toggleRag(docPath: string, e: React.MouseEvent) {
+  async function toggleRag(node: TreeNode | any, e: React.MouseEvent) {
     e.stopPropagation()
     if (!admin || busy) return
-    const doc = docs.find((d) => d.path === docPath)
-    if (!doc) return
+    const docId = (node as any).id as number | undefined
+    const path = (node as any)._path as string
+    if (docId === undefined || !path) return
     setBusy(true)
     try {
-      await api.setDocumentRag(doc.id, doc.rag_status === 'excluded')
-      await load()
+      const toExclude = (node as any)._rag_status !== 'excluded'
+      await api.setDocumentRag(docId, toExclude)
+      const parent = path.split('/').slice(0, -1).join('/')
+      await reloadDirs([parent])
       toast.success(t('filetree.ragUpdated'))
     } catch (err) {
       reportError(err)
@@ -230,15 +290,19 @@ export default function FileTree(props: Props) {
 
   async function confirmBatch() {
     if (!admin || busy || !selectMode) return
-    const target = Array.from(picked)
-      .map((p) => docs.find((d) => d.path === p))
-      .filter((d): d is Document => !!d)
-      .map((d) => d.id)
+    const target = Array.from(picked.values())
     if (!target.length) return
     setBusy(true)
     try {
       await api.batchSetRag(target, selectMode === 'add')
-      await load()
+      // 重载被勾选文档所在目录
+      const parents = new Set<string>()
+      for (const p of picked.keys()) {
+        const seg = p.split('/')
+        seg.pop()
+        parents.add(seg.join('/'))
+      }
+      await reloadDirs(Array.from(parents))
       toast.success(selectMode === 'add' ? t('filetree.ragBatchAdded') : t('filetree.ragBatchRemoved'))
       exitSelectMode()
     } catch (err) {
@@ -260,7 +324,38 @@ export default function FileTree(props: Props) {
           deleted: stats.deleted,
         })
       )
-      await load()
+      await reloadDirs(Object.keys(cacheRef.current))
+    } catch (err) {
+      reportError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRefresh() {
+    if (busy) return
+    setBusy(true)
+    try {
+      await reloadDirs(Object.keys(cacheRef.current))
+    } catch (err) {
+      reportError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function expandAll() {
+    if (busy) return
+    setBusy(true)
+    try {
+      const nodeId = nodeRef.current
+      const full = await api.getDocumentTree(nodeId ?? undefined) // 缺省 dir = 一次全量
+      if (nodeRef.current !== nodeId) return // 已切节点,丢弃
+      const { byDir, allDirs } = decompose(full)
+      cacheRef.current = byDir
+      inflightRef.current = {}
+      setCache(byDir)
+      setExp(allDirs)
     } catch (err) {
       reportError(err)
     } finally {
@@ -307,7 +402,7 @@ export default function FileTree(props: Props) {
           aria-selected={selectMode ? isPicked : undefined}
           onClick={() => {
             if (selectMode) {
-              if (pickable) togglePick(nodePath)
+              if (pickable) togglePick(nodePath, (node as any).id)
               return
             }
             navigate(`/knowledge/${nodePath}`)
@@ -316,7 +411,7 @@ export default function FileTree(props: Props) {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
               if (selectMode) {
-                if (pickable) togglePick(nodePath)
+                if (pickable) togglePick(nodePath, (node as any).id)
               } else {
                 navigate(`/knowledge/${nodePath}`)
               }
@@ -331,7 +426,7 @@ export default function FileTree(props: Props) {
               aria-disabled={!pickable}
               onClick={(e) => {
                 e.stopPropagation()
-                if (pickable) togglePick(nodePath)
+                if (pickable) togglePick(nodePath, (node as any).id)
               }}
             >
               {isPicked && <CheckIcon size={10} />}
@@ -344,7 +439,7 @@ export default function FileTree(props: Props) {
           {!selectMode && admin && (
             <button
               className={`tree__rag tree__rag--${status.variant}`}
-              onClick={(e) => toggleRag(nodePath, e)}
+              onClick={(e) => toggleRag(node, e)}
               title={t(status.i18nKey)}
               aria-label={t(status.i18nKey)}
             >
@@ -356,17 +451,37 @@ export default function FileTree(props: Props) {
     }
 
     const isExpanded = exp.includes(currentPath)
-    const children = Object.entries(node)
-      .filter(([key]) => !key.startsWith('_'))
-      .sort(([a, aNode], [b, bNode]) => {
-        const aIsFolder = !(aNode as any)._path
-        const bIsFolder = !(bNode as any)._path
-        if (aIsFolder && !bIsFolder) return -1
-        if (!aIsFolder && bIsFolder) return 1
-        return a.localeCompare(b)
-      })
+    const dirLoaded = currentPath in cache
+    const isLoading = loadingDirs.has(currentPath)
     const folderCls = ['tree__item']
     if (isExpanded) folderCls.push('tree__item--expanded')
+
+    let childrenContent: React.ReactNode = null
+    if (isExpanded && dirLoaded) {
+      const dirChildren = cache[currentPath]
+      const children = Object.entries(dirChildren)
+        .filter(([key]) => !key.startsWith('_'))
+        .sort(([a, aNode], [b, bNode]) => {
+          const aIsFolder = !(aNode as any)._path
+          const bIsFolder = !(bNode as any)._path
+          if (aIsFolder && !bIsFolder) return -1
+          if (!aIsFolder && bIsFolder) return 1
+          return a.localeCompare(b)
+        })
+      childrenContent = (
+        <div className="tree__children">
+          {children.map(([childName, childNode]) =>
+            renderNode(childName, childNode, currentPath)
+          )}
+        </div>
+      )
+    } else if (isExpanded && isLoading) {
+      childrenContent = (
+        <div className="tree__children">
+          <div className="tree__loading">{t('common.loading')}</div>
+        </div>
+      )
+    }
 
     return (
       <div key={currentPath}>
@@ -391,18 +506,15 @@ export default function FileTree(props: Props) {
           </span>
           <span className="tree__label">{name}</span>
         </div>
-        {isExpanded && (
-          <div className="tree__children">
-            {children.map(([childName, childNode]) =>
-              renderNode(childName, childNode, currentPath)
-            )}
-          </div>
-        )}
+        {childrenContent}
       </div>
     )
   }
 
-  if (loading) {
+  const rootLoaded = '' in cache
+  const rootChildren = rootLoaded ? cache[''] : {}
+
+  if (!rootLoaded) {
     return (
       <div className="panel panel__body">
         <EmptyState icon={<FileIcon size={28} />} title={t('common.loading')} />
@@ -410,7 +522,7 @@ export default function FileTree(props: Props) {
     )
   }
 
-  if (Object.keys(tree).length === 0) {
+  if (Object.keys(rootChildren).length === 0) {
     return (
       <div className="panel panel__body">
         <EmptyState
@@ -457,7 +569,8 @@ export default function FileTree(props: Props) {
           </button>
           <button
             className="icon-btn icon-btn--ghost"
-            onClick={() => setExp(collectAllDirs(tree))}
+            onClick={expandAll}
+            disabled={busy}
             aria-label={t('filetree.expandAll')}
             title={t('filetree.expandAll')}
           >
@@ -466,8 +579,8 @@ export default function FileTree(props: Props) {
           </button>
           <button
             className="icon-btn icon-btn--ghost"
-            onClick={load}
-            disabled={loading}
+            onClick={handleRefresh}
+            disabled={busy}
             aria-label={t('common.refresh')}
             title={t('common.refresh')}
           >
@@ -531,7 +644,7 @@ export default function FileTree(props: Props) {
       </div>
 
       {/* ============ 树 ============ */}
-      {Object.entries(tree).map(([name, node]) => renderNode(name, node))}
+      {Object.entries(rootChildren).map(([name, node]) => renderNode(name, node))}
     </div>
   )
 }

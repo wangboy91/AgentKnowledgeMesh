@@ -8,7 +8,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { api, isAdmin, Document } from '../api/client'
-import { useSelectedNodeId, useTreeVisible } from '../KnowledgeCtx'
+import { useSelectedNodeId, useTreeVisible, useMobileTreeOpen } from '../KnowledgeCtx'
 import MarkdownViewer from '../components/MarkdownViewer'
 import MarkdownEditor from '../components/MarkdownEditor'
 import FileTree from '../components/FileTree'
@@ -28,6 +28,7 @@ export default function Knowledge() {
   const { '*': filePath } = useParams<{ '*': string }>()
   const selectedNodeId = useSelectedNodeId()
   const treeVisible = useTreeVisible()
+  const mobileTreeOpen = useMobileTreeOpen()
   const [document, setDocument] = useState<Document | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -49,8 +50,8 @@ export default function Knowledge() {
     try {
       // 在选中节点作用域内按 path 查找;URL 会把 \ 规范化为 /,两侧统一归一化兜底
       const normalized = path.replace(/\\/g, '/')
-      const docs = await api.getDocuments(selectedNodeId ?? undefined)
-      const doc = docs.find((d) => d.path.replace(/\\/g, '/') === normalized)
+      const docs = await api.getDocuments(selectedNodeId ?? undefined, undefined, normalized)
+      const doc = docs[0]
       if (!doc) {
         setError(t('knowledge.documentNotFound'))
         return
@@ -169,13 +170,24 @@ export default function Knowledge() {
 
   return (
     <>
+      {/* Desktop tree pane (≥1024px) */}
       {treeVisible && (
-        <section className="tree-pane" aria-label={t('layout.paneTree')}>
+        <section className="tree-pane tree-pane--desktop" aria-label={t('layout.paneTree')}>
           <div className="tree-pane__body">
             <FileTree />
           </div>
         </section>
       )}
+
+      {/* Mobile tree drawer (<1024px) */}
+      <section
+        className={`tree-pane tree-pane--mobile ${mobileTreeOpen ? 'is-mobile-open' : ''}`}
+        aria-label={t('layout.paneTree')}
+      >
+        <div className="tree-pane__body">
+          <FileTree />
+        </div>
+      </section>
 
       {/* Document Pane */}
       <section className="panel doc-viewer" aria-label={t('layout.paneDoc')}>

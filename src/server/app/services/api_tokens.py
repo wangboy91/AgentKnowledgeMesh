@@ -1,7 +1,9 @@
 """API Token 服务(account-auth 能力).
 
-创建时生成一次性明文(akm_ 前缀),库中仅存 SHA256 哈希与前缀脱敏展示;
+创建 / 轮换时生成一次性明文(akm_ 前缀),库中仅存 SHA256 哈希与前缀脱敏展示;
 吊销后立即失效(解析侧按 revoked_at 过滤)。
+
+生命周期:`create` → (`rotate` 换密钥,记录不变) → `revoke`(软删,留审计) → `purge`(硬删)。
 """
 
 import hashlib
@@ -66,6 +68,32 @@ async def revoke_token(session: AsyncSession, token_id: int) -> bool:
     token.revoked_at = datetime.now(timezone.utc).replace(tzinfo=None)
     await session.commit()
     return True
+
+
+async def rotate_token(
+    session: AsyncSession, token_id: int
+) -> Optional[tuple[ApiToken, str]]:
+    """轮换 Token:为同一条记录换发新密钥,旧密钥立即失效。
+
+    与「吊销 + 新建」的区别:记录 id / 名称 / 角色 / 创建时间保持不变,
+    不会留下一条"已吊销"的残留记录,因此轮换后列表里仍是同一个**有效** Token,
+    只是前缀与密钥变了 —— 这是轮换的闭环。
+
+    已吊销的 Token 不允许轮换(轮换不应隐式恢复一个已被主动作废的凭证),
+    返回 None 表示记录不存在;对已吊销记录抛 ValueError。
+    """
+    token = await session.get(ApiToken, token_id)
+    if token is None:
+        return None
+    if token.revoked_at is not None:
+        raise ValueError("已吊销的 Token 不可轮换,请重新创建")
+    plaintext, token_hash, prefix = _generate_token()
+    token.token_hash = token_hash
+    token.token_prefix = prefix
+    token.last_used_at = None  # 新密钥尚未被使用
+    await session.commit()
+    await session.refresh(token)
+    return token, plaintext
 
 
 async def purge_token(session: AsyncSession, token_id: int) -> bool:

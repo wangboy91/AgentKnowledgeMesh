@@ -247,3 +247,65 @@ async def test_purge_token_missing(db):
 
     async with db() as session:
         assert await purge_token(session, 99999) is False
+
+
+# ---------- API Token 轮换(闭环) ----------
+
+
+@pytest.mark.asyncio
+async def test_rotate_token_replaces_secret(db):
+    """轮换闭环:同一记录换密钥,新密钥可用、旧密钥立即失效,且不产生"已吊销"残留。"""
+    from app.services.api_tokens import create_token, list_tokens, rotate_token
+    from app.services.auth import resolve_principal
+
+    async with db() as session:
+        token, old_plaintext = await create_token(session, "ci-agent", "admin")
+        token_id = token.id
+
+    async with db() as session:
+        result = await rotate_token(session, token_id)
+        assert result is not None
+        rotated, new_plaintext = result
+        assert rotated.id == token_id  # 记录不变
+        assert rotated.name == "ci-agent"  # 名称 / 角色保留
+        assert rotated.role == "admin"
+        assert rotated.revoked_at is None  # 仍然是有效 Token
+        assert new_plaintext != old_plaintext
+
+    async with db() as session:
+        rows = await list_tokens(session)
+        assert len(rows) == 1  # 没有多出一条"已吊销"记录
+        assert rows[0]["id"] == token_id
+        assert rows[0]["revoked"] is False
+        # 闭环:新密钥可认证
+        assert await resolve_principal(new_plaintext, session) is not None
+        # 闭环:旧密钥立即失效
+        assert await resolve_principal(old_plaintext, session) is None
+
+
+@pytest.mark.asyncio
+async def test_rotate_token_rejects_revoked(db):
+    from app.services.api_tokens import create_token, list_tokens, revoke_token, rotate_token
+
+    async with db() as session:
+        token, _ = await create_token(session, "dead", "viewer")
+        token_id = token.id
+
+    async with db() as session:
+        assert await revoke_token(session, token_id) is True
+
+    async with db() as session:
+        # 已吊销的凭证不允许靠"轮换"隐式复活
+        with pytest.raises(ValueError):
+            await rotate_token(session, token_id)
+
+    async with db() as session:
+        assert (await list_tokens(session))[0]["revoked"] is True
+
+
+@pytest.mark.asyncio
+async def test_rotate_token_missing(db):
+    from app.services.api_tokens import rotate_token
+
+    async with db() as session:
+        assert await rotate_token(session, 99999) is None

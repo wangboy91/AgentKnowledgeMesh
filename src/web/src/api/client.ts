@@ -270,19 +270,23 @@ async function putJSONBody<T>(url: string, body: unknown): Promise<T> {
 export const api = {
   // ========== Documents ==========
 
-  /** 获取文档列表(可指定节点或按 RAG 状态过滤) */
-  getDocuments(nodeId?: string, ragStatus?: string): Promise<Document[]> {
+  /** 获取文档列表(可指定节点 / RAG 状态 / 精确 path 过滤) */
+  getDocuments(nodeId?: string, ragStatus?: string, path?: string): Promise<Document[]> {
     const params = new URLSearchParams()
     if (nodeId) params.set('node_id', nodeId)
     if (ragStatus) params.set('rag_status', ragStatus)
+    if (path) params.set('path', path)
     const qs = params.toString()
     return fetchJSON(`${BASE_URL}/documents${qs ? `?${qs}` : ''}`)
   },
 
-  /** 获取文件树 */
-  getDocumentTree(nodeId?: string): Promise<Record<string, any>> {
-    const params = nodeId ? `?node_id=${nodeId}` : ''
-    return fetchJSON(`${BASE_URL}/documents/tree${params}`)
+  /** 获取文件树;dir 传目录路径(含空串=根)时返回该目录一层直接子项,缺省返回完整树 */
+  getDocumentTree(nodeId?: string, dir?: string): Promise<Record<string, any>> {
+    const params = new URLSearchParams()
+    if (nodeId) params.set('node_id', nodeId)
+    if (dir !== undefined) params.set('dir', dir)
+    const qs = params.toString()
+    return fetchJSON(`${BASE_URL}/documents/tree${qs ? `?${qs}` : ''}`)
   },
 
   /** 获取文档详情 */
@@ -467,6 +471,11 @@ export const api = {
   /** 吊销 API Token */
   revokeApiToken(tokenId: number): Promise<{ message: string }> {
     return deleteJSON(`${BASE_URL}/auth/tokens/${tokenId}`)
+  },
+
+  /** 轮换 API Token:同一记录换发新密钥,旧密钥立即失效(明文仅本次返回) */
+  rotateApiToken(tokenId: number): Promise<ApiTokenInfo & { token: string }> {
+    return postJSONBody(`${BASE_URL}/auth/tokens/${tokenId}/rotate`, {})
   },
 
   /** 彻底删除已吊销的 API Token(不可恢复) */

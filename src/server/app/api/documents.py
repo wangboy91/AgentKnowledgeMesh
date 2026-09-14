@@ -42,15 +42,18 @@ class DocumentRagBatch(BaseModel):
 async def list_documents(
     node_id: str | None = Query(None, description="节点 ID 过滤(缺省全量;local 为 hub 本机目录)"),
     rag_status: str | None = Query(None, description="按 RAG 状态过滤(indexed/pending/excluded)"),
+    path: str | None = Query(None, description="按 path 精确匹配(组合 node_id 可唯一定位;供 Knowledge 页解析 doc id;非模糊匹配)"),
     principal=Depends(require_auth("viewer", allow_node=True)),
     session: AsyncSession = Depends(get_session),
 ):
-    """获取文档列表（不含内容），可按 node_id / rag_status 过滤."""
+    """获取文档列表（不含内容），可按 node_id / rag_status / path 过滤."""
     stmt = select(Document).order_by(Document.updated_at.desc())
     if node_id:
         stmt = stmt.where(Document.node_id == node_id)
     if rag_status:
         stmt = stmt.where(Document.rag_status == rag_status)
+    if path:
+        stmt = stmt.where(Document.path == path)
     result = await session.execute(stmt)
     documents = result.scalars().all()
     return [doc.to_dict(include_content=False) for doc in documents]
@@ -59,18 +62,48 @@ async def list_documents(
 @router.get("/tree")
 async def get_document_tree(
     node_id: str | None = Query(None, description="节点 ID 过滤(缺省全量)"),
+    dir: str | None = Query(None, description="目录切片:传目录路径(含空串'')返回该目录一层直接子项;缺省返回完整树"),
     principal=Depends(require_auth("viewer", allow_node=True)),
     session: AsyncSession = Depends(get_session),
 ):
-    """获取文件树结构(可指定节点;文件节点携带 rag_status 信息)."""
-    stmt = select(Document.path, Document.title, Document.rag_status)
+    """获取文件树结构.
+
+    缺省返回完整树(向后兼容);传 dir 时返回该目录的**一层直接子项**:
+    文件节点 {_title,_path,_rag_status,id},目录节点 {} 占位(前端懒加载契约)。
+    """
+    stmt = select(Document.path, Document.title, Document.rag_status, Document.id)
     if node_id:
         stmt = stmt.where(Document.node_id == node_id)
+    if dir is not None and dir != "":
+        stmt = stmt.where(Document.path.startswith(dir.rstrip("/") + "/", autoescape=True))
     result = await session.execute(stmt)
     rows = result.all()
 
+    # 切片模式:仅返回 dir 的一层直接子项
+    if dir is not None:
+        normalized = dir.rstrip("/")
+        prefix = f"{normalized}/" if normalized else ""
+        children: dict = {}
+        for path, title, rag_status, doc_id in rows:
+            # Python 侧二次精筛:与 SQL 侧 LIKE(部分方言大小写宽松)保持一致
+            if normalized and not path.startswith(prefix):
+                continue
+            rest = path[len(prefix):] if prefix else path
+            seg, _, tail = rest.partition("/")
+            if tail:
+                # 目录占位;若该名同时是文件(FS 不可达),文件分支优先覆盖
+                children.setdefault(seg, {})
+            else:
+                children[seg] = {
+                    "_title": title,
+                    "_path": path,
+                    "_rag_status": rag_status,
+                    "id": doc_id,
+                }
+        return children
+
     tree = {}
-    for path, title, rag_status in rows:
+    for path, title, rag_status, doc_id in rows:
         parts = path.split("/")
         current = tree
         for i, part in enumerate(parts):
@@ -79,6 +112,7 @@ async def get_document_tree(
                     "_title": title,
                     "_path": path,
                     "_rag_status": rag_status,
+                    "id": doc_id,
                 }
             else:
                 if part not in current:
