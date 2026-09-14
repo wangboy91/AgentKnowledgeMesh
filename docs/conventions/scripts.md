@@ -57,9 +57,31 @@
 - 禁止 `_q_`、`tmp`、`test1`、`aaa` 这类无意义前缀/名字
 - 下划线前缀(`_xxx.py`)**不再表示"临时"**;文件名须与头注释描述一致
 
-## 6. 红线自查
+## 6. 验证产物(截图 / 录屏 / 导出文件)
+
+验证脚本产生的图片、录屏、临时导出文件,**一律不得落进源码目录**(`src/web/`、`src/server/` 等)。
+
+| 产物 | 落盘位置 | 是否入库 |
+| --- | --- | --- |
+| 验证截图 / 录屏 | `.workbuddy-ai/screenshots/` | 否(`.workbuddy-ai/` 已 ignore) |
+| 临时导出(csv/json/png) | 系统临时目录或 `.workbuddy-ai/` 下 | 否 |
+| 需要长期保留的对照图 | `docs/assets/`(如确有必要) | 是,需在文档中引用 |
+
+规则:
+
+- **脚本里显式写输出目录**,不要依赖 cwd 默认值:
+  ```js
+  const OUT = path.join(ROOT, '.workbuddy-ai', 'screenshots')
+  await page.screenshot({ path: path.join(OUT, 'shot-xxx.png') })
+  ```
+- **不是每次改动都要截图**:只在需要视觉验证(布局/主题/交互回归)时才截,纯逻辑改动用单测或构建验证即可
+- **`git add .` 前先 `git status --short`**:未跟踪的截图会被一把扫进提交;`.gitignore` 只对未跟踪文件生效,已提交的必须 `git rm --cached <file>` 才移得出去
+
+## 7. 红线自查
 
 - [ ] 模块根目录无散装脚本
 - [ ] 保留的脚本均有头注释,写清测什么、怎么跑
 - [ ] 脚本未硬编码密钥/连接串(从 `.env` 或 config 读)
 - [ ] 脚本归属目录正确(tests / scripts / eval)
+- [ ] 源码目录内无截图 / 录屏 / 临时导出文件
+- [ ] 截图脚本显式指定输出到 `.workbuddy-ai/screenshots/`
