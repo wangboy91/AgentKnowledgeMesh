@@ -9,7 +9,7 @@
 | POST | `/api/auth/login` | 登录,返回 JWT(24h) | 公开 |
 | POST | `/api/auth/change-password` | 修改本人密码 | 登录用户 |
 | GET/POST/PUT/DELETE | `/api/auth/users` | 用户管理(创建/禁用/改角色/重置密码/删除) | admin |
-| GET/POST/DELETE | `/api/auth/tokens` | API Token 管理(创建仅返回一次明文/吊销) | admin |
+| GET/POST/DELETE | `/api/auth/tokens` | API Token 管理(创建仅返回一次明文/吊销/彻底删除) | admin |
 
 > 除 `GET /api/health` 与 auth 外,全部端点需要 `Authorization: Bearer <JWT|API Token|节点token>`;viewer 只读,admin 可写。Agent/脚本用 API Token 调 Context API 与 MCP SSE。节点凭证(node token)另享**只读**知识端点权限(search / rag/search / context / documents 读取类),供节点本地 MCP 代理使用(见 [technical-design.md §9](technical-design.md))。首次启动自动创建管理员(环境变量或随机密码打印);本机恢复:`uv run akm-hub reset-password <username>`。
 

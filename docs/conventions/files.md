@@ -20,6 +20,7 @@ AgentKnowledgeMesh/
 
 - `src/server/data/`(数据库)、`src/server/.env`、各 `.venv`、`dist/`、`node_modules/`:生成物/本地配置,**不入库**
 - 根目录不放代码;新目录先进 `docs/` 或 `src/` 讨论定位
+- 脚本按类型进 `<module>/tests/`、`<module>/scripts/`、`<module>/eval/`,模块根目录禁放散装脚本(见 [scripts.md](scripts.md))
 
 ## 2. 命名
 
@@ -43,6 +44,7 @@ docs/
 └── conventions/
     ├── ui.md              # UI 规范(布局/主题/i18n/交互)
     ├── workflow.md        # 流程规范(openspec 生命周期/验证基线)
+    ├── scripts.md         # 脚本规范(测试/调试脚本的存放与注释)
     └── files.md           # 本文件(目录/命名/职责)
 ```
 

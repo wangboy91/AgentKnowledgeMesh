@@ -168,3 +168,82 @@ async def test_resolve_principal_node(db):
 async def test_resolve_principal_unknown(db):
     async with db() as session:
         assert await resolve_principal("no-such-credential", session) is None
+
+
+# ---------- API Token 吊销 / 彻底删除 ----------
+
+
+@pytest.mark.asyncio
+async def test_revoke_token_marks_revoked(db):
+    from app.services.api_tokens import list_tokens, revoke_token
+
+    async with db() as session:
+        session.add(
+            ApiToken(name="live", token_hash="h1", token_prefix="akm_live", role="viewer")
+        )
+        await session.commit()
+        token_id = (await list_tokens(session))[0]["id"]
+
+    async with db() as session:
+        assert await revoke_token(session, token_id) is True
+
+    async with db() as session:
+        row = (await list_tokens(session))[0]
+        # 吊销是软删除:记录仍在,状态标记为 revoked
+        assert row["revoked"] is True
+        # 再次吊销返回 False(幂等)
+        assert await revoke_token(session, token_id) is False
+
+
+@pytest.mark.asyncio
+async def test_purge_token_removes_row(db):
+    from datetime import datetime
+
+    from app.services.api_tokens import list_tokens, purge_token
+
+    async with db() as session:
+        session.add(
+            ApiToken(
+                name="dead",
+                token_hash="h2",
+                token_prefix="akm_dead",
+                role="viewer",
+                revoked_at=datetime(2020, 1, 1),
+            )
+        )
+        await session.commit()
+        token_id = (await list_tokens(session))[0]["id"]
+
+    async with db() as session:
+        assert await purge_token(session, token_id) is True
+
+    async with db() as session:
+        assert await list_tokens(session) == []
+
+
+@pytest.mark.asyncio
+async def test_purge_token_rejects_active(db):
+    from app.services.api_tokens import list_tokens, purge_token
+
+    async with db() as session:
+        session.add(
+            ApiToken(name="live", token_hash="h3", token_prefix="akm_live", role="viewer")
+        )
+        await session.commit()
+        token_id = (await list_tokens(session))[0]["id"]
+
+    async with db() as session:
+        # 活跃 Token 必须先吊销,不允许直接硬删除
+        with pytest.raises(ValueError):
+            await purge_token(session, token_id)
+
+    async with db() as session:
+        assert len(await list_tokens(session)) == 1
+
+
+@pytest.mark.asyncio
+async def test_purge_token_missing(db):
+    from app.services.api_tokens import purge_token
+
+    async with db() as session:
+        assert await purge_token(session, 99999) is False

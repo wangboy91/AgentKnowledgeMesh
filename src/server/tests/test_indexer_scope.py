@@ -106,3 +106,23 @@ def test_scanner_skips_nested_hidden_dirs(tmp_path):
 
     docs = scan_knowledge_roots([tmp_path])
     assert [d.path for d in docs] == ["b.md"]
+
+
+async def test_hub_scan_delete_scopes_to_local_on_path_collision(db):
+    """local 与节点存在同 path 文档:local 侧消失时仅删 local 行,节点文档幸存.
+
+    回归:indexer 删除按 path.in_(paths_to_delete) `无 node_id 过滤`,
+    路径撞车时会跨作用域误删节点文档。
+    """
+    await _seed_document(db, "local", "same.md", "L")
+    await _seed_document(db, "node-1", "same.md", "N")
+
+    scanned = []  # hub 本机扫描不再包含 same.md
+    async with db() as session:
+        stats = await sync_documents(session, scanned, rag_mode="auto")
+        assert stats["deleted"] == 1
+        result = await session.execute(
+            select(Document).where(Document.node_id == "node-1")
+        )
+        node_docs = result.scalars().all()
+        assert [d.path for d in node_docs] == ["same.md"]  # 节点文档幸存

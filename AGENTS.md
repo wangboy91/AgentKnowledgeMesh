@@ -16,6 +16,7 @@ AgentKnowledgeMesh 是一个**独立项目**:面向 AI Agent 时代的分布式�
 | **UI 规范**(布局/主题/i18n/交互) | [docs/conventions/ui.md](docs/conventions/ui.md) |
 | **流程规范**(openspec 生命周期/验证基线/红线自查) | [docs/conventions/workflow.md](docs/conventions/workflow.md) |
 | **文件规范**(目录/命名/职责边界) | [docs/conventions/files.md](docs/conventions/files.md) |
+| **脚本规范**(测试/调试脚本的存放与注释) | [docs/conventions/scripts.md](docs/conventions/scripts.md) |
 | 正式规范(能力 spec) | `openspec/specs/` |
 | 进行中/历史变更 | `openspec/changes/` |
 

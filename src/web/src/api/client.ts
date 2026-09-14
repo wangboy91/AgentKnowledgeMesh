@@ -441,6 +441,14 @@ export const api = {
     return postJSONBody(`${BASE_URL}/auth/users`, { username, password, role })
   },
 
+  /** 更新用户:停用/启用、改角色、重置密码(仅传需要改的字段) */
+  updateUser(
+    userId: number,
+    patch: { disabled?: boolean; role?: 'admin' | 'viewer'; password?: string }
+  ): Promise<UserInfo> {
+    return putJSONBody(`${BASE_URL}/auth/users/${userId}`, patch)
+  },
+
   /** 删除用户 */
   deleteUser(userId: number): Promise<{ message: string }> {
     return deleteJSON(`${BASE_URL}/auth/users/${userId}`)
@@ -459,5 +467,10 @@ export const api = {
   /** 吊销 API Token */
   revokeApiToken(tokenId: number): Promise<{ message: string }> {
     return deleteJSON(`${BASE_URL}/auth/tokens/${tokenId}`)
+  },
+
+  /** 彻底删除已吊销的 API Token(不可恢复) */
+  purgeApiToken(tokenId: number): Promise<{ message: string }> {
+    return deleteJSON(`${BASE_URL}/auth/tokens/${tokenId}/purge`)
   },
 }

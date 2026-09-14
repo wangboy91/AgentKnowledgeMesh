@@ -19,6 +19,7 @@ from akm_shared.scanner import (
 )
 
 from app.config import NodeSettings
+import app.state as state
 from app.state import load_snapshot, save_snapshot
 from app.transport import HubTransport
 
@@ -86,7 +87,9 @@ class DocumentSync:
         self.settings = settings
         self.documents: list[ScannedDocument] = []
         # 快照文件路径可注入(测试用),缺省 <data>/sync_state.json
-        self.snapshot_path = snapshot_path
+        self.snapshot_path = (
+            snapshot_path if snapshot_path is not None else state.DEFAULT_SNAPSHOT_PATH
+        )
 
     async def sync_documents(self):
         """扫描并按 hash-first 差异同步文档到 Hub."""

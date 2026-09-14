@@ -186,3 +186,29 @@ async def test_sync_rejected_excluded_from_snapshot(tmp_path, monkeypatch):
     # b 未在快照 → 本轮以全文上传
     by_path = {d["path"]: d for d in calls["payloads"][0]["documents"]}
     assert "content" in by_path["b.md"]
+
+
+async def test_sync_defaults_snapshot_path_when_omitted(tmp_path, monkeypatch):
+    """未显式传 snapshot_path 时落到默认路径,不崩溃.
+
+    回归:runner 构造 DocumentSync 时不传 snapshot_path,__init__ 留下的
+    None 直接进了 load_snapshot,触发 'NoneType' object has no attribute
+    'read_text'(见 app/state.py 的 except 只兜 OSError/ValueError)。
+    """
+    import app.state as state
+
+    default_path = tmp_path / "data" / "sync_state.json"
+    monkeypatch.setattr(state, "DEFAULT_SNAPSHOT_PATH", default_path)
+
+    settings = NodeSettings(hub_api_url="http://test/api", knowledge_roots="")
+    sync = DocumentSync(_FakeTransport(), settings)
+    calls = _patch(
+        monkeypatch,
+        [_doc("a.md", "A")],
+        [_FakeResponse(200, {"created": 1, "updated": 0, "deleted": 0, "rejected": []})],
+    )
+
+    await sync.sync_documents()
+
+    assert default_path.exists()
+    assert '"a.md"' in default_path.read_text(encoding="utf-8")

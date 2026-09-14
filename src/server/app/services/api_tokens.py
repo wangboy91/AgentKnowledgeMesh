@@ -66,3 +66,21 @@ async def revoke_token(session: AsyncSession, token_id: int) -> bool:
     token.revoked_at = datetime.now(timezone.utc).replace(tzinfo=None)
     await session.commit()
     return True
+
+
+async def purge_token(session: AsyncSession, token_id: int) -> bool:
+    """彻底删除 Token 记录(硬删除),返回是否存在.
+
+    与 `revoke_token` 的区别:吊销只置 `revoked_at` 保留审计痕迹;
+    彻底删除会移除整行,不可恢复。仅允许删除**已吊销**的 Token,
+    避免误删仍在使用的凭证(活跃 Token 必须先吊销再删除)。
+    """
+    token = await session.get(ApiToken, token_id)
+    if token is None:
+        return False
+    if token.revoked_at is None:
+        raise ValueError("仅可删除已吊销的 Token,请先吊销")
+    await session.delete(token)
+    await session.commit()
+    return True
+

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.models import User
-from app.services.api_tokens import create_token, list_tokens, revoke_token
+from app.services.api_tokens import create_token, list_tokens, purge_token, revoke_token
 from app.services.auth import (
     create_access_token,
     hash_password,
@@ -208,3 +208,19 @@ async def delete_token(
     if not ok:
         raise HTTPException(status_code=404, detail="Token 不存在或已吊销")
     return {"message": "已吊销"}
+
+
+@router.delete("/tokens/{token_id}/purge")
+async def purge_token_endpoint(
+    token_id: int,
+    principal=Depends(require_auth("admin")),
+    session: AsyncSession = Depends(get_session),
+):
+    """彻底删除已吊销的 API Token(admin,不可恢复)."""
+    try:
+        ok = await purge_token(session, token_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not ok:
+        raise HTTPException(status_code=404, detail="Token 不存在")
+    return {"message": "已彻底删除"}

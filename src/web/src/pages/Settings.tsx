@@ -5,12 +5,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, isAdmin, type ApiTokenInfo } from '../api/client'
 import { useToast, useErrorReporter } from '../components/Toast'
+import UserManagement from '../components/UserManagement'
 import {
   KeyIcon,
   CopyIcon,
   TrashIcon,
   AlertIcon,
   CheckIcon,
+  BanIcon,
 } from '../components/Icon'
 import { formatDate } from '../utils/format'
 
@@ -23,7 +25,13 @@ export default function Settings() {
   const [role, setRole] = useState<'admin' | 'viewer'>('viewer')
   const [plaintext, setPlaintext] = useState('')
   const [ragMode, setRagModeState] = useState<'auto' | 'manual'>('auto')
+  const [showRevoked, setShowRevoked] = useState(false)
   const admin = isAdmin()
+
+  // 吊销是软删除(保留记录以便审计),默认只展示有效 token
+  const revokedTokens = tokens.filter((tr) => tr.revoked)
+  const activeTokens = tokens.filter((tr) => !tr.revoked)
+  const visibleTokens = showRevoked ? tokens : activeTokens
 
   const refresh = useCallback(async () => {
     try {
@@ -73,6 +81,18 @@ export default function Settings() {
     }
   }
 
+  async function handlePurge(token: ApiTokenInfo) {
+    if (!admin) return
+    if (!confirm(t('settings.purgeConfirm', { name: token.name }))) return
+    try {
+      await api.purgeApiToken(token.id)
+      toast.success(t('settings.purgedToast'))
+      await refresh()
+    } catch (err) {
+      reportError(err)
+    }
+  }
+
   async function handleRagMode(mode: 'auto' | 'manual') {
     if (!admin) return
     if (mode === 'manual' && !confirm(t('settings.ragConfirmManual'))) return
@@ -110,6 +130,9 @@ export default function Settings() {
     <div className="page">
       <h2>{t('settings.title')}</h2>
       <p className="page__desc">{t('settings.desc')}</p>
+
+      {/* 用户管理 */}
+      <UserManagement />
 
       {/* RAG Mode */}
       <section className="settings-section">
@@ -210,12 +233,37 @@ export default function Settings() {
 
       {/* Token List */}
       <section className="settings-section" style={{ padding: 0 }}>
-        <div style={{ padding: 'var(--space-5)' }}>
-          <h3>{t('settings.tokenList')}</h3>
-          <p style={{ marginBottom: 'var(--space-3)' }}>{t('settings.tokenListDesc')}</p>
+        <div
+          style={{
+            padding: 'var(--space-5)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 'var(--space-3)',
+          }}
+        >
+          <div>
+            <h3>{t('settings.tokenList')}</h3>
+            <p style={{ marginBottom: 0 }}>{t('settings.tokenListDesc')}</p>
+          </div>
+          {revokedTokens.length > 0 && (
+            <button
+              className="btn btn--sm btn--ghost"
+              onClick={() => setShowRevoked((v) => !v)}
+              aria-pressed={showRevoked}
+            >
+              {showRevoked
+                ? t('settings.hideRevoked')
+                : t('settings.showRevoked', { count: revokedTokens.length })}
+            </button>
+          )}
         </div>
-        {tokens.length === 0 ? (
-          <div className="table__empty">{t('settings.noTokens')}</div>
+        {visibleTokens.length === 0 ? (
+          <div className="table__empty">
+            {revokedTokens.length > 0
+              ? t('settings.noActiveTokens')
+              : t('settings.noTokens')}
+          </div>
         ) : (
           <table className="table">
             <thead>
@@ -229,7 +277,7 @@ export default function Settings() {
               </tr>
             </thead>
             <tbody>
-              {tokens.map((tr) => (
+              {visibleTokens.map((tr) => (
                 <tr key={tr.id}>
                   <td><strong>{tr.name}</strong></td>
                   <td><span className="table__mono">{tr.token_prefix}…</span></td>
@@ -247,13 +295,23 @@ export default function Settings() {
                     )}
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    {!tr.revoked && (
+                    {!tr.revoked ? (
                       <button
                         className="icon-btn"
                         style={{ color: 'var(--color-danger)' }}
                         onClick={() => handleRevoke(tr)}
                         title={t('settings.revoke')}
                         aria-label={t('settings.revoke')}
+                      >
+                        <BanIcon size={14} />
+                      </button>
+                    ) : (
+                      <button
+                        className="icon-btn"
+                        style={{ color: 'var(--color-danger)' }}
+                        onClick={() => handlePurge(tr)}
+                        title={t('settings.purge')}
+                        aria-label={t('settings.purge')}
                       >
                         <TrashIcon size={14} />
                       </button>

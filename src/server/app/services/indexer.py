@@ -79,13 +79,16 @@ async def sync_documents(
             stats["created"] += 1
             changed_paths.append(doc.path)
 
-    # 删除已不存在的文档(删除前捕获 id 供向量清理)
+    # 删除已不存在的文档(仅 local 作用域,绝不触及节点文档;删除前捕获 id 供向量清理)
     paths_to_delete = set(existing.keys()) - scanned_paths
     deleted_ids: list[int] = []
     if paths_to_delete:
         deleted_ids = [existing[p].id for p in paths_to_delete]
         await session.execute(
-            delete(Document).where(Document.path.in_(paths_to_delete))
+            delete(Document).where(
+                Document.node_id == "local",
+                Document.path.in_(paths_to_delete),
+            )
         )
         stats["deleted"] = len(paths_to_delete)
 
@@ -96,9 +99,14 @@ async def sync_documents(
         for path in changed_paths:
             doc = existing.get(path)
             if doc is None:
-                # 本轮新插入的文档不在 existing 中,flush 后按路径查询取 id
+                # 本轮新插入的文档不在 existing 中,flush 后按 (node_id, path)
+                # 查询取 id——必须限定 local,否则同路径节点文档会误取(id
+                # 归属错误)或使 scalar_one_or_none 抛 MultipleResultsFound
                 row = await session.execute(
-                    select(Document).where(Document.path == path)
+                    select(Document).where(
+                        Document.node_id == "local",
+                        Document.path == path,
+                    )
                 )
                 doc = row.scalar_one_or_none()
             if doc is not None and doc.content:

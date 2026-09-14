@@ -27,6 +27,7 @@ import {
   XIcon,
   PlusIcon,
   MinusIcon,
+  RefreshIcon,
 } from './Icon'
 import EmptyState from './EmptyState'
 import { useToast, useErrorReporter } from './Toast'
@@ -431,26 +432,8 @@ export default function FileTree(props: Props) {
     <div className="tree">
       {/* ============ 工具栏 ============ */}
       <div className="tree-toolbar">
-        {/* 第一排:过滤 + 全部展开/收起 */}
+        {/* 第一排:条件过滤 + 全部收起/展开 + 刷新 */}
         <div className="tree-toolbar__row">
-          <button
-            className="icon-btn icon-btn--ghost"
-            onClick={() => setExp(collectAllDirs(tree))}
-            aria-label={t('filetree.expandAll')}
-            title={t('filetree.expandAll')}
-          >
-            <ChevronDownIcon size={14} />
-            <ChevronDownIcon size={14} style={{ marginLeft: -6 }} />
-          </button>
-          <button
-            className="icon-btn icon-btn--ghost"
-            onClick={() => setExp([])}
-            aria-label={t('filetree.collapseAll')}
-            title={t('filetree.collapseAll')}
-          >
-            <ChevronRightIcon size={14} />
-            <ChevronRightIcon size={14} style={{ marginLeft: -6 }} />
-          </button>
           <select
             className="select"
             value={filter}
@@ -463,16 +446,33 @@ export default function FileTree(props: Props) {
             <option value="pending">{t('filetree.statusPending')}</option>
             <option value="excluded">{t('filetree.statusExcluded')}</option>
           </select>
-          {admin && (
-            <button
-              className="icon-btn icon-btn--ghost"
-              onClick={handleScan}
-              aria-label={t('filetree.scanNow')}
-              title={t('filetree.scanNow')}
-            >
-              <ScanIcon size={14} />
-            </button>
-          )}
+          <button
+            className="icon-btn icon-btn--ghost"
+            onClick={() => setExp([])}
+            aria-label={t('filetree.collapseAll')}
+            title={t('filetree.collapseAll')}
+          >
+            <ChevronRightIcon size={14} />
+            <ChevronRightIcon size={14} style={{ marginLeft: -6 }} />
+          </button>
+          <button
+            className="icon-btn icon-btn--ghost"
+            onClick={() => setExp(collectAllDirs(tree))}
+            aria-label={t('filetree.expandAll')}
+            title={t('filetree.expandAll')}
+          >
+            <ChevronDownIcon size={14} />
+            <ChevronDownIcon size={14} style={{ marginLeft: -6 }} />
+          </button>
+          <button
+            className="icon-btn icon-btn--ghost"
+            onClick={load}
+            disabled={loading}
+            aria-label={t('common.refresh')}
+            title={t('common.refresh')}
+          >
+            <RefreshIcon size={14} />
+          </button>
         </div>
 
         {/* 第二排:批量操作(勾选模式) */}
