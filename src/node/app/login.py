@@ -2,7 +2,8 @@
 
 交互输入 Hub API 地址与管理员账号密码,经
 POST /api/auth/login -> POST /api/nodes/register 换取节点 token,
-并写入本地 .env(已 gitignore),此后 `uv run akm-node` 无头常驻。
+并写入用户级 .env(~/.akm-node/.env,可用 AKM_NODE_ENV_FILE 覆盖),
+此后 `akm-node` 无头常驻。
 """
 
 import asyncio
@@ -10,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from app.config import BASE_DIR, settings
+from app.config import USER_ENV_FILE, settings
 
 
 def _read_password(prompt: str) -> str:
@@ -37,6 +38,7 @@ def _derive_ws_url(hub_api_url: str) -> str:
 
 def _update_env(path: Path, updates: dict) -> None:
     """更新 .env 中的键,保留其余行(键不存在则追加)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
     result, seen = [], set()
     for line in lines:
@@ -121,7 +123,7 @@ def prompt_and_exchange(default_hub_api_url: str) -> tuple[dict, str]:
     result = _run_exchange(_exchange_credentials(hub_api_url, username, password, node_name))
 
     _update_env(
-        BASE_DIR / ".env",
+        USER_ENV_FILE,
         {
             "AKM_HUB_API_URL": hub_api_url,
             "AKM_HUB_URL": _derive_ws_url(hub_api_url),
@@ -145,7 +147,7 @@ def run_login() -> int:
 
     print("=" * 50)
     print(f"✅ 接入成功:node_id={result['node_id']}")
-    print(f"   凭证已写入 {BASE_DIR / '.env'}")
-    print("   之后直接运行 `uv run akm-node` 即可无头常驻")
+    print(f"   凭证已写入 {USER_ENV_FILE}")
+    print("   之后直接运行 `akm-node` 即可无头常驻(开发仓内亦可用 `uv run akm-node`)")
     print("=" * 50)
     return 0

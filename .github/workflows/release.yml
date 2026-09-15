@@ -1,0 +1,68 @@
+# 发版流水线:打 v* tag 触发
+#   1. 构建 akm-shared / akm-node wheel
+#   2. 构建并推送 Hub 镜像(server+web 单容器)到 GHCR
+#   3. 创建 GitHub Release:附 wheels、两个安装脚本、版本固化的部署 compose
+# 详见 docs/deployment.md
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.5"
+
+      - name: Build wheels
+        run: |
+          uv build --out-dir dist src/shared
+          uv build --out-dir dist src/node
+          ls -la dist/
+
+      - name: Docker login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Hub image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./src
+          file: ./src/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/wangboy91/akm-hub:${{ github.ref_name }}
+            ghcr.io/wangboy91/akm-hub:latest
+
+      - name: Prepare release compose (bake image tag)
+        run: |
+          mkdir -p release-assets
+          sed "s/\${AKM_HUB_VERSION:-latest}/${{ github.ref_name }}/g" \
+            deploy/docker-compose.yml > release-assets/docker-compose.yml
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/akm_shared-*.whl
+            dist/akm_node-*.whl
+            deploy/install-akm-node.sh
+            deploy/install-akm-node.ps1
+            release-assets/docker-compose.yml

@@ -42,3 +42,27 @@ def test_creates_parent_dirs(tmp_path):
     """父目录不存在时自动创建."""
     save_snapshot({"a.md": "h1"}, tmp_path / "nested/dir/sync_state.json")
     assert (tmp_path / "nested/dir/sync_state.json").exists()
+
+
+# ---- 快照位置选择(安装版 vs 开发仓) ----
+
+def test_resolve_snapshot_path_prefers_existing_repo_snapshot(tmp_path):
+    """开发仓位置已有快照时继续用原位置(存量开发状态无感迁移)."""
+    from app.state import resolve_snapshot_path
+
+    repo = tmp_path / "repo" / "sync_state.json"
+    repo.parent.mkdir()
+    repo.write_text("{}", encoding="utf-8")
+    user = tmp_path / "user" / "sync_state.json"
+
+    assert resolve_snapshot_path(repo, user) == repo
+
+
+def test_resolve_snapshot_path_falls_back_to_user_dir(tmp_path):
+    """开发仓位置无快照(安装版/首次运行)时用用户目录."""
+    from app.state import resolve_snapshot_path
+
+    repo = tmp_path / "repo" / "sync_state.json"  # 不创建
+    user = tmp_path / "user" / "sync_state.json"
+
+    assert resolve_snapshot_path(repo, user) == user

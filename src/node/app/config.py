@@ -1,5 +1,6 @@
 """Node 配置管理."""
 
+import os
 import platform
 import uuid
 from pathlib import Path
@@ -8,8 +9,20 @@ from pydantic import Field
 from pydantic_settings import BaseSettings
 
 # 项目根目录（src/node，即 app 包的父目录）
-# 所有相对路径均锚定到此目录，与运行时 CWD 无关
+# 开发场景下与用户目录 .env 并存（见 USER_ENV_FILE）
 BASE_DIR = Path(__file__).parent.parent
+
+# 用户级配置/凭证文件：uv tool 安装后 BASE_DIR 位于 venv 的 site-packages，
+# 升级即丢，因此凭证必须落在用户目录；AKM_NODE_ENV_FILE 可覆盖路径。
+# 解析优先级（高→低）：进程环境变量 > USER_ENV_FILE > BASE_DIR/.env（仅开发仓存在）。
+USER_ENV_FILE = Path(
+    os.environ.get("AKM_NODE_ENV_FILE") or Path.home() / ".akm-node" / ".env"
+)
+
+# 用户级运行数据目录（同步快照等）：AKM_NODE_STATE_DIR 可覆盖
+USER_STATE_DIR = Path(
+    os.environ.get("AKM_NODE_STATE_DIR") or Path.home() / ".akm-node"
+)
 
 
 class NodeSettings(BaseSettings):
@@ -47,7 +60,8 @@ class NodeSettings(BaseSettings):
 
     model_config = {
         "env_prefix": "AKM_",
-        "env_file": str(BASE_DIR / ".env"),
+        # 列表后者优先：用户目录文件覆盖开发仓的 src/node/.env
+        "env_file": [str(BASE_DIR / ".env"), str(USER_ENV_FILE)],
     }
 
     def get_node_id(self) -> str:

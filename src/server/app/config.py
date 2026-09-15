@@ -28,7 +28,7 @@ class Settings(BaseSettings):
         "",
     )  # 首次启动创建的管理员密码(空则生成随机密码打印到日志)
     app_version: str = Field(
-        "0.1.0",
+        "0.2.0",
     )
     host: str = Field(
         "0.0.0.0",

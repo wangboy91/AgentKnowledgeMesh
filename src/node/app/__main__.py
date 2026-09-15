@@ -1,7 +1,8 @@
 """AgentKnowledgeMesh Node 客户端入口.
 
 运行方式:
-    uv run akm-node
+    akm-node            (uv tool 安装的全局命令)
+    uv run akm-node     (开发仓内)
     或
     python -m app
 """
@@ -19,8 +20,23 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
 
+def _get_version() -> str:
+    """取包版本:安装版读包元数据,开发仓回退 dev 标记."""
+    try:
+        from importlib.metadata import version
+
+        return version("akm-node")
+    except Exception:
+        return "0.2.0-dev"
+
+
 def main():
     """启动 Node 客户端."""
+    # 版本查询:akm-node --version / -V
+    if "--version" in sys.argv or "-V" in sys.argv:
+        print(_get_version())
+        return
+
     # 登录子命令(account-auth):akm-node login
     if "login" in sys.argv:
         from app.login import run_login
@@ -29,7 +45,7 @@ def main():
 
     # 无凭证时拒绝启动(不再支持匿名接入)
     if not settings.node_token:
-        print("❌ 节点尚未接入:请先执行 `uv run akm-node login` 完成登录(account-auth)")
+        print("❌ 节点尚未接入:请先执行 `akm-node login` 完成登录(account-auth)")
         sys.exit(1)
 
     # 本地 MCP 代理模式:智能体拉起子进程,stdio 提供与 Hub 同名的三个工具;

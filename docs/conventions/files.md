@@ -12,6 +12,7 @@ AgentKnowledgeMesh/
 │   ├── web/           # 前端(React+Vite+TS);构建产物 dist/(不入库)
 │   └── shared/        # 共享扫描器(akm-shared,本地 path 依赖)
 ├── docs/              # 产品与技术文档 + 规约(见 §3)
+├── deploy/            # 发版/部署资产:安装脚本、部署 compose、本地构建脚本
 ├── openspec/          # 规范驱动开发工件(specs/ 与 changes/)
 ├── AGENTS.md          # 工程规约地图(会话/开发者入口)
 ├── CLAUDE.md          # 团队章程(薄,指向 AGENTS.md)
@@ -41,6 +42,7 @@ docs/
 ├── product-overview.md    # 产品概要:定位/角色/功能地图/迭代计划
 ├── technical-design.md    # 技术方案:当前批次的架构与接口设计
 ├── api-reference.md       # API 参考(全部端点)
+├── deployment.md          # 部署指南(Hub 容器 / akm-node 一键安装)
 └── conventions/
     ├── ui.md              # UI 规范(布局/主题/i18n/交互)
     ├── workflow.md        # 流程规范(openspec 生命周期/验证基线)

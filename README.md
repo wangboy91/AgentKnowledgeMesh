@@ -103,6 +103,8 @@ docker compose -f docker-compose.pg.yml up -d         # Hub(PostgreSQL)
 docker compose -f docker-compose.node.yml up -d       # Node
 ```
 
+正式部署(拉取 GHCR 发布镜像 + 各机器一键安装 akm-node)见 **[docs/deployment.md](docs/deployment.md)**。
+
 ## 使用说明
 
 - **浏览知识库**:Web 首页看统计;知识库页三栏布局(左选节点 → 中文件树 → 右渲染),搜索命中自动展开到对应文档,展开状态按节点记忆
@@ -120,6 +122,12 @@ docker compose -f docker-compose.node.yml up -d       # Node
     }
   }
 }
+```
+
+一键安装版(`deploy/install-akm-node.*`,见部署文档)直接用全局命令,无需 cwd:
+
+```json
+{ "mcpServers": { "agentknowledge": { "command": "akm-node", "args": ["--mcp"] } } }
 ```
 
 节点代理经 stdio 提供与 Hub 同名的三个工具(`search_documents` / `get_document` / `list_documents`),内部转调 Hub HTTP API(统一 10s 超时);`search_documents` 支持 `mode=semantic` 走 Hub 语义混合检索(向量⊕关键词按权重融合);节点本地无凭证(未执行过 `akm-node login`)时会输出"请先执行 akm-node login"并退出。
@@ -148,6 +156,7 @@ docker compose -f docker-compose.node.yml up -d       # Node
 - [docs/product-overview.md](docs/product-overview.md) — 产品概要与迭代计划
 - [docs/technical-design.md](docs/technical-design.md) — 当前批次技术方案
 - [docs/api-reference.md](docs/api-reference.md) — API 参考
+- [docs/deployment.md](docs/deployment.md) — 部署指南(容器 Hub / akm-node 一键安装)
 - [docs/conventions/](docs/conventions/) — UI / 流程 / 文件规范
 - [AGENTS.md](AGENTS.md) — 工程规约地图(AI 会话入口)
 

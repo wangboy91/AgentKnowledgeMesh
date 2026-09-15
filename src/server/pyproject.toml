@@ -1,6 +1,7 @@
 [project]
 name = "akm-server"
-version = "0.1.0"
+version = "0.2.0"
+license = { text = "MIT" }
 description = "AgentKnowledgeMesh - Distributed Knowledge OS for AI Agents"
 requires-python = ">=3.11"
 dependencies = [
