@@ -48,7 +48,8 @@ services:
       # 向量嵌入:默认走火山引擎 Ark(代码默认即 ark),API Key 由部署方
       # 在本目录 .env 中提供(绝不打进镜像);不配置时语义检索报
       # "AKM_ARK_API_KEY 未配置"。local 模式为可选依赖,随 Release 的镜像
-      # 未含 sentence-transformers,需要 local 请自建镜像(uv sync --extra local-embedding)
+      # 未含 sentence-transformers:需要 local 请改用源码构建部署并设
+      # AKM_UV_EXTRAS=local-embedding(见 docs/deployment.md §1.8),无需改 Dockerfile
       - AKM_EMBEDDING_PROVIDER=${AKM_EMBEDDING_PROVIDER:-ark}
       - AKM_EMBEDDING_MODEL=${AKM_EMBEDDING_MODEL:-doubao-embedding-vision-250615}
       - AKM_ARK_API_KEY=${AKM_ARK_API_KEY:-}

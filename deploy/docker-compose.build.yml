@@ -1,0 +1,37 @@
+# 部署用 compose - 源码构建叠加文件(不单独使用)
+#
+# 用途:不用等 Release / 需要改源码 / 需要装发布镜像不含的可选依赖(如 local 嵌入)时,
+#   直接在本机从源码构建 Hub 镜像并起服务。
+#
+# 为什么是"叠加文件":镜像部署与源码部署的业务配置(管理员账号、知识目录挂载、
+#   数据卷、Ark 嵌入透传、外接库连接)应当完全一致,差别只在镜像从哪来。
+#   本文件只覆盖 akm-hub 的镜像来源(改成 build),其余一律继承被叠加的部署 compose,
+#   避免维护两套会漂移的配置。
+#
+# 用法(在仓库根目录执行,按需选一个基础文件叠加):
+#   docker compose -f deploy/docker-compose.yml             -f deploy/docker-compose.build.yml up -d --build
+#   docker compose -f deploy/docker-compose.pg.yml          -f deploy/docker-compose.build.yml up -d --build
+#   docker compose -f deploy/docker-compose.external-pg.yml -f deploy/docker-compose.build.yml up -d --build
+#
+# 可选 .env(与基础文件同一目录 deploy/.env,或执行目录):
+#   AKM_HUB_IMAGE=akm-hub:local         # 本地镜像名与 tag(默认 akm-hub:local)
+#   AKM_UV_EXTRAS=local-embedding       # 额外可选依赖:离线本地嵌入模型(sentence-transformers)
+#                                       # 留空 = 与发布镜像一致(默认 ark HTTP 嵌入,不含 torch)
+#   其余变量同被叠加的基础 compose:KNOWLEDGE_DIR / AKM_ADMIN_USERNAME / AKM_ADMIN_PASSWORD
+#   / POSTGRES_PASSWORD / AKM_ARK_API_KEY / AKM_DB_HOST 等
+#
+# 升级:拉取新源码后重复执行同一条 `up -d --build` 即重建镜像并重启容器;
+#   数据卷(akm-hub-data / postgres-data)不受影响。
+#
+# 注意:构建上下文为 ../src(相对本文件所在目录 deploy/),构建规则见 src/Dockerfile;
+#   首次构建需拉取 node/python 基础镜像并联网装依赖,耗时数分钟。
+
+services:
+  akm-hub:
+    image: ${AKM_HUB_IMAGE:-akm-hub:local}
+    build:
+      context: ../src
+      dockerfile: Dockerfile
+      args:
+        # 空 = 只装运行必需依赖(与发布镜像一致);local-embedding = 加装本地嵌入模型
+        AKM_UV_EXTRAS: ${AKM_UV_EXTRAS:-}

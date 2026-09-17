@@ -22,8 +22,16 @@ WORKDIR /app
 COPY server/pyproject.toml server/.python-version ./
 # akm-shared 作为 path 依赖（../shared），需在 uv sync 前拷贝到 /shared
 COPY shared/ /shared
+# 可选依赖入口(源码构建用):留空 = 与发布镜像一致,只装运行必需依赖;
+# 传 local-embedding = 额外装 sentence-transformers(离线本地嵌入模型)。
+# 发布流水线不传该参数,行为不变。
+ARG AKM_UV_EXTRAS=""
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-dev --no-install-project
+    if [ -n "$AKM_UV_EXTRAS" ]; then \
+        uv sync --no-dev --no-install-project --extra "$AKM_UV_EXTRAS"; \
+    else \
+        uv sync --no-dev --no-install-project; \
+    fi
 
 # Copy backend code
 COPY server/ .

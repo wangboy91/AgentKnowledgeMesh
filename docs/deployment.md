@@ -63,6 +63,8 @@ docker compose -f docker-compose.external-pg.yml up -d  # 外接已有 PostgreSQ
 
 固定版本部署:compose 中镜像 tag 即发布版本(如 `ghcr.io/wangboy91/akm-hub:v0.2.0`),回滚改回旧 tag 重启即可;也可用环境变量 `AKM_HUB_VERSION=v0.2.0` 指定。
 
+> 手上已有仓库源码、想直接跑当前代码(不等发版)、要改源码或装可选依赖、内网拉不到 GHCR?见 **§1.8 源码构建部署** —— 同一套配置,只把镜像来源换成本地构建。
+
 ### 1.4 管理员初始化
 
 - 配置了 `AKM_ADMIN_PASSWORD` → 首次启动(空数据库)直接用该账号登录;
@@ -87,7 +89,7 @@ AKM_ARK_API_KEY=你的Ark密钥        # 必填,否则语义检索报 "AKM_ARK_A
 ```
 
 - 获取 Key:[火山引擎 Ark 控制台](https://console.volcengine.com/ark);
-- 想离线免 Key:设 `AKM_EMBEDDING_PROVIDER=local`(本地 sentence-transformers 模型)。注意 local 是**可选依赖**,随 Release 分发的镜像为控制体积未包含:需要 local 请基于源码自建镜像(`src/Dockerfile` 的 `uv sync` 加 `--extra local-embedding`);
+- 想离线免 Key:设 `AKM_EMBEDDING_PROVIDER=local`(本地 sentence-transformers 模型)。注意 local 是**可选依赖**,随 Release 分发的镜像为控制体积未包含:用源码构建部署(§1.8)并加 `AKM_UV_EXTRAS=local-embedding` 即可,无需改 Dockerfile;
 - 改完 `.env` 后 `docker compose -f docker-compose.pg.yml up -d` 重建容器生效。
 
 SQLite 模式不涉及嵌入配置(无向量库,RAG 不可用,见 §1.2)。
@@ -105,6 +107,44 @@ SQLite 模式不涉及嵌入配置(无向量库,RAG 不可用,见 §1.2)。
 ### 1.7 GHCR 镜像可见性
 
 首次由 Actions 推送的包在 GHCR 可能默认为 private:到 GitHub → Packages → `akm-hub` → Package settings → Change visibility → Public,否则其他机器 `docker pull` 需要登录。
+
+### 1.8 源码构建部署(不用 Release 镜像)
+
+适用:想直接跑手上这份源码(未发布的改动 / 临时分支)、需要改源码、需要装发布镜像不含的可选依赖,或内网拉不到 GHCR。
+
+前置:本机有 Docker,且手上有完整仓库源码(含 `src/` 与 `deploy/`)。在**仓库根目录**执行:
+
+```bash
+# SQLite(零依赖)
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml up -d --build
+# PostgreSQL(含 pgvector 容器,RAG 完整)
+docker compose -f deploy/docker-compose.pg.yml -f deploy/docker-compose.build.yml up -d --build
+# 外接已有 PostgreSQL
+docker compose -f deploy/docker-compose.external-pg.yml -f deploy/docker-compose.build.yml up -d --build
+```
+
+`deploy/docker-compose.build.yml` 是**叠加文件**:只把 `akm-hub` 的镜像来源改成从 `src/` 本地构建,管理员账号、知识目录挂载、数据卷、数据库连接、Ark 嵌入透传等配置全部继承基础 compose —— 因此源码构建与镜像部署的行为一致,只有镜像来源不同。它不能单独执行。
+
+`.env` 变量与镜像部署完全相同(见 §1.3 / §1.5),另有两个只对源码构建生效的变量:
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `AKM_HUB_IMAGE` | `akm-hub:local` | 本地构建产物的镜像名与 tag |
+| `AKM_UV_EXTRAS` | 空 | 额外可选依赖。留空 = 与发布镜像一致(不含 torch);`local-embedding` = 加装 sentence-transformers |
+
+例:离线免 Key 的本地嵌入(替代 §1.5 的 Ark 云服务)
+
+```bash
+AKM_UV_EXTRAS=local-embedding AKM_EMBEDDING_PROVIDER=local \
+docker compose -f deploy/docker-compose.pg.yml -f deploy/docker-compose.build.yml up -d --build
+```
+
+注意:
+
+- 首次构建需拉取基础镜像并联网装依赖(`npm install` + `uv sync`),数分钟级;之后重建复用构建缓存;
+- **升级** = 拉取新源码后重复同一条 `up -d --build`;数据卷(`akm-hub-data` / `postgres-data`)不受影响;
+- **回滚** = 换回基础 compose 单独执行(`docker compose -f deploy/docker-compose.yml up -d`),即回到 GHCR 镜像;
+- 密钥仍只存在于部署目录 `.env`,经环境变量注入容器,不进镜像(同 §1.5)。
 
 ---
 

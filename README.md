@@ -100,11 +100,16 @@ uv run akm-node --help  # 命令一览:用法、断开(Ctrl+C)与断线重连(5 
 ### Docker
 
 ```bash
-KNOWLEDGE_DIR=~/Knowledge docker compose up -d        # Hub(SQLite,无 RAG)
-docker compose -f docker-compose.pg.yml up -d         # Hub(PostgreSQL + pgvector,含 RAG)
-docker compose -f docker-compose.external-pg.yml up -d  # Hub(外接已有 PostgreSQL,含 RAG)
-docker compose -f docker-compose.node.yml up -d       # Node
+# 方式一:拉取 GHCR 发布镜像(默认)
+docker compose -f deploy/docker-compose.yml up -d               # Hub(SQLite,无 RAG)
+docker compose -f deploy/docker-compose.pg.yml up -d            # Hub(PostgreSQL + pgvector,含 RAG)
+docker compose -f deploy/docker-compose.external-pg.yml up -d   # Hub(外接已有 PostgreSQL,含 RAG)
+
+# 方式二:从当前源码构建镜像(不想等发版 / 要改源码 / 要装发布镜像不含的可选依赖 / 内网拉不到 GHCR)
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml up -d --build
 ```
+
+> 两种方式配置完全一致,只有镜像来源不同(`KNOWLEDGE_DIR`、管理员账号、Ark 嵌入等变量见 [docs/deployment.md §1.3](docs/deployment.md));源码构建可用 `AKM_UV_EXTRAS=local-embedding` 装离线本地嵌入模型(见 [§1.8](docs/deployment.md))。节点(`akm-node`)是每台知识源机器一条命令安装的轻量客户端,不随 Hub 容器部署 —— 见上方「节点接入」。
 
 > ⚠️ **RAG(语义检索/自动向量化)依赖 PostgreSQL + pgvector,SQLite 模式不支持**:SQLite 模式下语义检索接口与 MCP `mode=semantic` 返回错误、自动向量化不工作(启动日志有 `Vector DB init failed` 警告,属预期);关键词检索与文档同步不受影响。需要 RAG 请用 PostgreSQL 模式。详见 [docs/deployment.md §1.2](docs/deployment.md)。
 

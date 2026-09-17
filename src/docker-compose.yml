@@ -1,3 +1,8 @@
+# ⚠️ 仓内 dev 遗留配置(配置已落后于部署版:无管理员账号变量、无 Ark 嵌入透传等)。
+# 部署/自建镜像请用 deploy/ 的部署 compose + 源码构建叠加文件:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml up -d --build
+# 见 docs/deployment.md §1.8。本文件仅保留给 make docker-up 等既有开发习惯。
+
 services:
   # Main application (SQLite mode - default)
   akm-hub:
