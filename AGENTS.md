@@ -41,7 +41,8 @@ cd src/server && uv sync && uv run akm-hub          # :8000;--mcp 为 stdio 模�
 # 前端
 cd src/web && npm install && npm run dev            # :5173,代理 /api → :8000
 # 节点
-cd src/node && uv sync && uv run akm-node
+cd src/node && uv sync && uv run akm-node             # 需先 login(凭证在 ~/.akm-node/.env)
+cd src/node && uv run akm-node --help                 # 命令一览(含断开/重连说明)
 # 测试与构建
 cd src/server && uv run pytest
 cd src/web && npm run build
@@ -55,7 +56,7 @@ cd src/server && uv run python eval/run_eval.py
 
 - 扫描:`POST /api/documents/scan` 后查 `/api/documents`
 - 搜索:`GET /api/search?q=`(关键词)、`GET /api/rag/search?q=`(语义/混合)
-- 多节点:Hub + Node 同机起,观察 WS 注册 → 心跳 → `PUT /nodes/{id}/documents`
+- 多节点:Hub + Node 同机起,观察 WS 注册 → 心跳 → `PUT /nodes/{id}/documents`;`uv run akm-node login` 一条命令应完成登录 → 连接 → 首次同步(Ctrl+C 退出)
 - 前端:明暗两主题各过一遍;文案不得硬编码(见 ui.md)
 - 数据库:SQLite 与 PostgreSQL 双路径
 

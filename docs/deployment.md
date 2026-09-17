@@ -136,10 +136,18 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/wangboy91/AgentKno
 akm-node login
 ```
 
-交互输入:Hub API 地址(如 `http://<服务器IP>:8000/api`)、管理员用户名/密码。成功后凭证写入 `~/.akm-node/.env`(路径可用 `AKM_NODE_ENV_FILE` 覆盖),之后常驻运行无需交互:
+交互输入:Hub API 地址(如 `http://<服务器IP>:8000/api`)、管理员用户名/密码。成功后凭证写入 `~/.akm-node/.env`(路径可用 `AKM_NODE_ENV_FILE` 覆盖),**进程不退出**,自动连接 Hub 完成注册并执行首次扫描同步,随后前台常驻;断开按 Ctrl+C。
+
+之后再启动只需:
 
 ```bash
 akm-node          # 前台常驻;或用 systemd / 任务计划程序 / pm2 托管
+```
+
+命令一览与断线行为(断开方式、5 秒自动重连)随时可查:
+
+```bash
+akm-node --help
 ```
 
 节点默认扫描 `~/Knowledge`(存在时);配置目录:
@@ -200,9 +208,10 @@ claude mcp add agentknowledge -- akm-node --mcp
 | 语义检索报错 / 日志有 `Vector DB init failed` | Hub 是 SQLite 模式,不支持 RAG(见 §1.2);需要语义检索请用 `docker-compose.pg.yml` 部署 PostgreSQL 模式 |
 | PowerShell 远程脚本被策略拦截 | 下载脚本后 `powershell -ExecutionPolicy Bypass -File install-akm-node.ps1` |
 | 安装后新终端才有 `akm-node` | PATH 刷新所致,重开终端即可 |
-| 节点凭证失效(Web 端重置过 token) | 重新 `akm-node login` |
+| 节点凭证失效(Web 端重置过 token) | 重新 `akm-node login`(运行中会主动询问是否现场重登) |
 | 想换知识库目录 | 改 `~/.akm-node/.env` 的 `AKM_KNOWLEDGE_ROOTS` 后重启节点 |
 | Hub 换了地址 | 重新 `akm-node login` 输入新地址(凭证会刷新) |
+| 登录后终端一直占用、想退出 | `login` 成功即进入常驻运行(设计如此),按 Ctrl+C 退出;凭证已写入,之后 `akm-node` 可随时再启动 |
 
 ---
 

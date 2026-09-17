@@ -21,6 +21,7 @@ import {
 } from './Icon'
 import EmptyState from './EmptyState'
 import { useToast, useErrorReporter } from './Toast'
+import { encodeDocPath } from '../utils/format'
 
 /**
  * 折叠懒加载文件树:展开某目录时按 dir 切片请求其一层直接子项,
@@ -405,7 +406,7 @@ export default function FileTree(props: Props) {
               if (pickable) togglePick(nodePath, (node as any).id)
               return
             }
-            navigate(`/knowledge/${nodePath}`)
+            navigate(`/knowledge/${encodeDocPath(nodePath)}`)
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -413,7 +414,7 @@ export default function FileTree(props: Props) {
               if (selectMode) {
                 if (pickable) togglePick(nodePath, (node as any).id)
               } else {
-                navigate(`/knowledge/${nodePath}`)
+                navigate(`/knowledge/${encodeDocPath(nodePath)}`)
               }
             }
           }}

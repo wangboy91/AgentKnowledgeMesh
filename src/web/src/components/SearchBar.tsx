@@ -7,6 +7,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { api, RagSearchResult } from '../api/client'
+import { encodeDocPath } from '../utils/format'
 import { SearchIcon, SparkleIcon } from './Icon'
 
 type Mode = 'semantic' | 'keyword'
@@ -76,7 +77,7 @@ export default function SearchBar({ onResultClick }: SearchBarProps = {}) {
   }
 
   function handleSelect(result: RagSearchResult) {
-    navigate(`/knowledge/${result.path}`)
+    navigate(`/knowledge/${encodeDocPath(result.path)}`)
     setQuery('')
     setShowResults(false)
     onResultClick?.()

@@ -3,7 +3,7 @@
 交互输入 Hub API 地址与管理员账号密码,经
 POST /api/auth/login -> POST /api/nodes/register 换取节点 token,
 并写入用户级 .env(~/.akm-node/.env,可用 AKM_NODE_ENV_FILE 覆盖),
-此后 `akm-node` 无头常驻。
+登录成功后由 CLI 入口自动进入运行循环(连接 → 扫描 → 同步)。
 """
 
 import asyncio
@@ -148,6 +148,6 @@ def run_login() -> int:
     print("=" * 50)
     print(f"✅ 接入成功:node_id={result['node_id']}")
     print(f"   凭证已写入 {USER_ENV_FILE}")
-    print("   之后直接运行 `akm-node` 即可无头常驻(开发仓内亦可用 `uv run akm-node`)")
+    print("   即将自动连接 Hub 并执行首次扫描同步(按 Ctrl+C 退出)")
     print("=" * 50)
     return 0

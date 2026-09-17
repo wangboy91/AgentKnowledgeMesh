@@ -17,7 +17,7 @@
 **进行中(V0.4 · 账号与治理)**
 
 - 🔐 账号体系(admin / viewer)+ 全端点鉴权
-- ⌨️ 节点 CLI 登录接入(`akm-node login`),token 可吊销/重置
+- ⌨️ 节点 CLI 登录接入(`akm-node login`,登录成功即自动连接并首次同步),token 可吊销/重置;`--help` 说明命令与断线重连行为
 - 📦 hash-first 增量同步(只传变更)
 - 🎚️ RAG 同步模式(auto / manual + 文档级勾选)
 - 🌍 界面中英文切换
@@ -85,9 +85,11 @@ npm run dev             # http://localhost:5173(已代理 /api → :8000)
 ```bash
 cd src/node
 uv sync
-uv run akm-node login   # 交互输入 Hub 地址与管理员账号,凭证写入本地 .env
-uv run akm-node         # 无头常驻:注册、心跳、hash-first 增量同步本地文档
+uv run akm-node login   # 交互输入 Hub 地址与管理员账号;成功后自动连接并首次同步
+uv run akm-node --help  # 命令一览:用法、断开(Ctrl+C)与断线重连(5 秒)说明
 ```
+
+> `akm-node login` 一条命令完成「换取凭证 → 连接 Hub → 首次扫描同步」,随后前台常驻;断开按 Ctrl+C。之后再启动只需 `uv run akm-node`(无凭证时会提示先登录)。
 
 > 首次启动 Hub 会自动创建管理员账号(默认用户名 `admin`,随机密码打印在启动日志;可用 `AKM_ADMIN_USERNAME` / `AKM_ADMIN_PASSWORD` 环境变量指定)。忘记密码可在 Hub 所在机器执行 `uv run akm-hub reset-password <username>`。
 >
@@ -138,7 +140,7 @@ docker compose -f docker-compose.node.yml up -d       # Node
 远程/无节点机器用 Hub:SSE 模式 `"url": "http://localhost:8000/api/mcp/sse"`(需在 Web「设置」页创建 API Token),或 Hub 本机 stdio 模式 `"command": "uv", "args": ["run", "akm-hub", "--mcp"]`。三种接入形态工具集与返回格式完全一致。测试:`npx @modelcontextprotocol/inspector http://localhost:8000/api/mcp/sse`。
 
 - **Agent 检索接口**:`GET /api/context?q=xxx`(需 API Token)
-- **节点接入**:`uv run akm-node login` 输入账号密码 → 换取节点 token → 无头常驻;Web 端可吊销/重置(见 §3「节点接入」)
+- **节点接入**:`uv run akm-node login` 输入账号密码 → 换取节点 token → 自动连接 Hub 并首次同步(前台常驻,Ctrl+C 退出);Web 端可吊销/重置(见 §3「节点接入」)
 
 ## 配置
 

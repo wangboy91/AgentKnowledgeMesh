@@ -31,3 +31,18 @@ export function formatRelative(iso: string | null | undefined, now = Date.now())
 export function pathToSegments(filePath: string): string[] {
   return filePath.split('/').filter(Boolean)
 }
+
+/**
+ * 把文档路径编码为 URL 路径:逐段 encodeURIComponent,保留 `/` 分隔。
+ *
+ * 文件名可能含 `#` `?` `%` 等 URL 特殊字符(三平台均允许),直接拼进
+ * `/knowledge/...` 会被 react-router 的 parsePath 截断成 hash/search 或
+ * 触发非法百分号编码;读取侧 useParams 会自动逐段解码,故只需构造侧编码。
+ */
+export function encodeDocPath(path: string): string {
+  return path
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+}

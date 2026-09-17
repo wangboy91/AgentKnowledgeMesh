@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Document } from '../api/client'
-import { formatSize, formatDate, pathToSegments } from '../utils/format'
+import { formatSize, formatDate, pathToSegments, encodeDocPath } from '../utils/format'
 import {
   FileIcon,
   ClockIcon,
@@ -75,7 +75,7 @@ export default function MarkdownViewer({ document }: Props) {
                   {isLast ? (
                     <strong>{segment}</strong>
                   ) : (
-                    <Link to={`/knowledge/${pathSoFar}`}>{segment}</Link>
+                    <Link to={`/knowledge/${encodeDocPath(pathSoFar)}`}>{segment}</Link>
                   )}
                 </span>
               )

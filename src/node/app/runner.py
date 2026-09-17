@@ -10,7 +10,8 @@
 import asyncio
 import sys
 
-from app.config import NodeSettings, settings
+from app.config import NodeSettings
+from app.config import settings as default_settings
 from app.sync import DocumentSync
 from app.transport import HubTransport
 
@@ -18,7 +19,11 @@ from app.transport import HubTransport
 class HubClient:
     """Hub 客户端编排."""
 
-    def __init__(self):
+    def __init__(self, settings: NodeSettings | None = None):
+        # 配置可注入:login 成功衔接时凭证刚写入 .env,模块级单例仍是旧值,
+        # 须以新 NodeSettings 实例构造(与 _try_relogin 的重建手法一致)
+        if settings is None:
+            settings = default_settings
         self.transport = HubTransport(settings)
         self.sync = DocumentSync(self.transport, settings)
 
