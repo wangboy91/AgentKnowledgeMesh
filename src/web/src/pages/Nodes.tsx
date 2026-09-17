@@ -232,7 +232,7 @@ export default function Nodes() {
                       </span>
                     )}
                   </td>
-                  <td className="muted">{formatRelative(node.last_heartbeat)}</td>
+                  <td className="muted">{formatRelative(node.last_heartbeat, t)}</td>
                   <td style={{ textAlign: 'right' }}>
                     {admin ? (
                       <div style={{ display: 'inline-flex', gap: 4 }}>

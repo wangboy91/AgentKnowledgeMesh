@@ -33,22 +33,23 @@ install-node:
 build: install-frontend
 	cd web && npm run build
 
-# Docker (SQLite)
+# Docker(部署配置统一在 deploy/;这里从源码构建,等价于在仓库根执行 deploy/ 的叠加命令)
+# 见 docs/deployment.md §1.8
 docker-up:
-	docker compose up -d --build
+	docker compose -f ../deploy/docker-compose.yml -f ../deploy/docker-compose.build.yml up -d --build
 
 # Docker (PostgreSQL)
 docker-up-pg:
-	docker compose -f docker-compose.pg.yml up -d --build
+	docker compose -f ../deploy/docker-compose.pg.yml -f ../deploy/docker-compose.build.yml up -d --build
 
-# Docker (Node client)
+# Docker (Node client;先登录见 deploy/docker-compose.node.yml 头注释)
 docker-up-node:
-	docker compose -f docker-compose.node.yml up -d --build
+	docker compose -f ../deploy/docker-compose.node.yml up -d --build
 
 docker-down:
-	docker compose down
-	docker compose -f docker-compose.pg.yml down 2>/dev/null || true
-	docker compose -f docker-compose.node.yml down 2>/dev/null || true
+	docker compose -f ../deploy/docker-compose.yml down
+	docker compose -f ../deploy/docker-compose.pg.yml down 2>/dev/null || true
+	docker compose -f ../deploy/docker-compose.node.yml down 2>/dev/null || true
 
 # Clean
 clean:

@@ -16,6 +16,10 @@ export default {
     copy: 'Copy',
     retry: 'Retry',
     refresh: 'Refresh',
+    justNow: 'Just now',
+    minutesAgo: '{{n}} min ago',
+    hoursAgo: '{{n}} h ago',
+    daysAgo: '{{n}} d ago',
   },
   nav: {
     dashboard: 'Dashboard',

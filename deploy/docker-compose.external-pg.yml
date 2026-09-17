@@ -32,7 +32,7 @@ services:
     image: ghcr.io/wangboy91/akm-hub:${AKM_HUB_VERSION:-latest}
     container_name: akm-hub
     ports:
-      - "8000:8000"
+      - "18000:8000"
     volumes:
       # 本地知识库目录(只读挂载,修改为你的实际路径或在 .env 中设置 KNOWLEDGE_DIR)
       - ${KNOWLEDGE_DIR:-./knowledge}:/knowledge:ro

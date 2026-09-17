@@ -107,9 +107,12 @@ docker compose -f deploy/docker-compose.external-pg.yml up -d   # Hub(外接已�
 
 # 方式二:从当前源码构建镜像(不想等发版 / 要改源码 / 要装发布镜像不含的可选依赖 / 内网拉不到 GHCR)
 docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml up -d --build
+
+# 节点容器(可选:知识源机器本身是 Docker 环境;需先登录,见部署文档 §2.4)
+docker compose -f deploy/docker-compose.node.yml up -d --build
 ```
 
-> 两种方式配置完全一致,只有镜像来源不同(`KNOWLEDGE_DIR`、管理员账号、Ark 嵌入等变量见 [docs/deployment.md §1.3](docs/deployment.md));源码构建可用 `AKM_UV_EXTRAS=local-embedding` 装离线本地嵌入模型(见 [§1.8](docs/deployment.md))。节点(`akm-node`)是每台知识源机器一条命令安装的轻量客户端,不随 Hub 容器部署 —— 见上方「节点接入」。
+> 部署配置统一在 `deploy/`,两种方式配置完全一致,只有镜像来源不同(`KNOWLEDGE_DIR`、管理员账号、Ark 嵌入等变量见 [docs/deployment.md §1.3](docs/deployment.md));源码构建可用 `AKM_UV_EXTRAS=local-embedding` 装离线本地嵌入模型(见 [§1.8](docs/deployment.md))。节点默认是每台知识源机器一条命令安装的轻量客户端(见上方「节点接入」),不想装宿主命令时可改用上面的节点容器。
 
 > ⚠️ **RAG(语义检索/自动向量化)依赖 PostgreSQL + pgvector,SQLite 模式不支持**:SQLite 模式下语义检索接口与 MCP `mode=semantic` 返回错误、自动向量化不工作(启动日志有 `Vector DB init failed` 警告,属预期);关键词检索与文档同步不受影响。需要 RAG 请用 PostgreSQL 模式。详见 [docs/deployment.md §1.2](docs/deployment.md)。
 

@@ -15,15 +15,28 @@ export function formatDate(iso: string | null | undefined, fallback = '-'): stri
   return d.toLocaleString()
 }
 
-export function formatRelative(iso: string | null | undefined, now = Date.now()): string {
+/**
+ * 翻译函数签名(与 i18next 的 `t` 兼容)。
+ *
+ * utils 层不 import i18n 运行时,文案一律由调用侧注入,以满足
+ * 「语言包之外不得硬编码用户可见文案」(openspec `web-i18n`)。
+ */
+export type Translator = (key: string, options?: Record<string, unknown>) => string
+
+/** 相对时间文案:刚刚 / N 分钟前 / N 小时前 / N 天前;超过 30 天回退为本地日期。 */
+export function formatRelative(
+  iso: string | null | undefined,
+  t: Translator,
+  now = Date.now(),
+): string {
   if (!iso) return '-'
-  const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return '-'
-  const diff = (now - t) / 1000
-  if (diff < 60) return '刚刚'
-  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
-  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
-  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)} 天前`
+  const ts = new Date(iso).getTime()
+  if (Number.isNaN(ts)) return '-'
+  const diff = (now - ts) / 1000
+  if (diff < 60) return t('common.justNow')
+  if (diff < 3600) return t('common.minutesAgo', { n: Math.floor(diff / 60) })
+  if (diff < 86400) return t('common.hoursAgo', { n: Math.floor(diff / 3600) })
+  if (diff < 86400 * 30) return t('common.daysAgo', { n: Math.floor(diff / 86400) })
   return new Date(iso).toLocaleDateString()
 }
 

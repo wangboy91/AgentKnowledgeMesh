@@ -204,6 +204,26 @@ AKM_KNOWLEDGE_ROOTS=/path/to/notes,/path/to/docs   # 逗号分隔多个
 - Web 端「节点」页可见该节点,知识库页出现该机器的文档;
 - `akm-node --mcp`(下节)能检索到内容。
 
+### 2.4 容器方式(可选,仅 Docker 环境)
+
+知识源机器本身就是 Docker 环境时,节点也可以跑在容器里。**节点镜像没有 GHCR 发布版本**,由 `deploy/docker-compose.node.yml` 从源码就地构建(需仓库源码)。
+
+```bash
+# 1) 交互登录:输入 Hub 地址与管理员账号,凭证写入容器卷
+docker compose -f deploy/docker-compose.node.yml run --rm akm-node uv run python -m app login
+# 2) 常驻运行
+docker compose -f deploy/docker-compose.node.yml up -d
+```
+
+要点:
+
+- **凭证与同步快照在卷 `akm-node-state`**(容器内 `/root/.akm-node`),重建容器不丢登录;换机器/换卷需重新登录;
+- **Hub 地址以 compose 环境变量为准**(`AKM_HUB_API_URL` / `AKM_HUB_URL`,默认 `host.docker.internal:8000`)。因为进程环境变量优先级高于凭证文件,换 Hub 地址改 `.env` 后 `up -d` 重建容器即可,容器内 `login` 只负责换 token;
+- 知识库目录由 `KNOWLEDGE_DIR` 只读挂载到 `/knowledge`(与 Hub 容器同一套变量);
+- 未登录就 `up -d` 会看到容器反复重启并打印"节点尚未接入",先执行第 1 步即可。
+
+容器方式只影响节点进程怎么跑;Hub 侧看到的是一个普通节点,`akm-node --mcp` 的 MCP 接入(下节)在容器里同样可用(`docker compose -f deploy/docker-compose.node.yml exec akm-node uv run python -m app --mcp`)。
+
 ---
 
 ## 3. 本机智能体接入检索(MCP)

@@ -28,7 +28,7 @@
 - [x] 4.1 新增 `scripts/build-release.ps1`:本地构建两个 wheel(`uv build` 于 `src/shared`、`src/node`)并校验产物;验证:产出 `akm_shared-*.whl`、`akm_node-*.whl`
 - [ ] 4.2 新增 `.github/workflows/release.yml`:on push tag `v*` → buildx 构建 Hub 镜像(context `src/`)推 `ghcr.io/wangboy91/akm-hub:<tag>` 与 `:latest`(permissions: packages write)→ 构建 wheels → 创建 GitHub Release 并上传 wheels、两个安装脚本、部署用 `docker-compose.yml`(镜像固定版本 tag);验证:YAML 语法(actionlint 或 `gh workflow` 可见),推送测试 tag 后产物齐全 【workflow 已写、YAML 校验通过;产物齐全性待 v0.2.0 打 tag 首跑】
 - [x] 4.3 部署用 compose(随 Release 分发)编写:镜像引用 `ghcr.io/wangboy91/akm-hub:<VERSION>`,含 `KNOWLEDGE_DIR` 卷、数据卷、`AKM_ADMIN_USERNAME/PASSWORD` 环境变量示例;验证:compose config 校验通过
-- [x] 4.4 PG 模式 compose 透传 ark 嵌入配置:[deploy/docker-compose.pg.yml](../../../deploy/docker-compose.pg.yml) 与 [src/docker-compose.pg.yml](../../../src/docker-compose.pg.yml) 的 akm-hub environment 增加 `AKM_EMBEDDING_PROVIDER`/`AKM_EMBEDDING_MODEL`/`AKM_ARK_API_KEY`/`AKM_ARK_BASE_URL` 透传(默认 ark,与 `src/server/app/config.py` 默认值一致;API Key 由部署方在本地 `.env` 提供,不进镜像);同步修正 `src/server/.env.example` 嵌入段(原写 local 默认,与代码不符)与 [docs/deployment.md](../../../docs/deployment.md) 新增 §1.5 嵌入模型配置;验证:`docker compose config` 两个 compose 均校验通过
+- [x] 4.4 PG 模式 compose 透传 ark 嵌入配置:[deploy/docker-compose.pg.yml](../../../deploy/docker-compose.pg.yml) 与 `src/docker-compose.pg.yml`(该文件已于 2026-09-17 作为重复配置删除,内容由 `deploy/` 对应文件 + `docker-compose.build.yml` 叠加覆盖) 的 akm-hub environment 增加 `AKM_EMBEDDING_PROVIDER`/`AKM_EMBEDDING_MODEL`/`AKM_ARK_API_KEY`/`AKM_ARK_BASE_URL` 透传(默认 ark,与 `src/server/app/config.py` 默认值一致;API Key 由部署方在本地 `.env` 提供,不进镜像);同步修正 `src/server/.env.example` 嵌入段(原写 local 默认,与代码不符)与 [docs/deployment.md](../../../docs/deployment.md) 新增 §1.5 嵌入模型配置;验证:`docker compose config` 两个 compose 均校验通过
 
 ## 5. 文档与协议
 

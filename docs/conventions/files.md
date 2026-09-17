@@ -23,6 +23,21 @@ AgentKnowledgeMesh/
 - 根目录不放代码;新目录先进 `docs/` 或 `src/` 讨论定位
 - 脚本按类型进 `<module>/tests/`、`<module>/scripts/`、`<module>/eval/`,模块根目录禁放散装脚本(见 [scripts.md](scripts.md))
 
+### 部署配置的唯一来源:`deploy/`
+
+**部署编排配置(compose)只在 `deploy/` 一份**,`src/` 下不得再放功能重复的 compose:
+
+| 文件 | 用途 |
+| --- | --- |
+| `deploy/docker-compose.yml` / `.pg.yml` / `.external-pg.yml` | 三种数据库模式的部署编排(镜像来自 GHCR) |
+| `deploy/docker-compose.build.yml` | 源码构建**叠加文件**(配合上面任一文件使用,不单独执行) |
+| `deploy/docker-compose.node.yml` | 节点容器编排(源码就地构建) |
+
+- 新增/修改部署形态:改 `deploy/` 下的文件,不要新建 `src/docker-compose*.yml`(历史副本已因配置漂移被清理:与 `deploy/` 重复的 SQLite / PG 两份已删除,节点那份移入 `deploy/`)
+- 仓库内其他入口(如 `src/Makefile` 的 docker 目标)引用 `deploy/` 下的文件,不复制内容
+- 部署配置与镜像构建规则分离:compose 在 `deploy/`,Dockerfile 在 `src/`(构建上下文为 `src/`)
+
+
 ## 2. 命名
 
 | 对象 | 约定 | 示例 |

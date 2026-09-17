@@ -57,8 +57,11 @@
 | V0.1 | 单机知识库 | 扫描索引、Web 浏览、关键词搜索、Docker 部署 | ✅ |
 | V0.2 | 多节点架构 | Hub+Node、WebSocket、注册心跳、远程文档 | ✅ |
 | V0.3 | Agent 集成 | Context API、MCP、混合检索(RAG)、文档转换、在线编辑 | ✅ |
-| V0.4 | 账号与治理 | 上表 6 项:账号鉴权、CLI 接入、增量同步、RAG 模式、i18n、三栏树 | 🚧 进行中 |
+| V0.4 | 账号与治理 | 上表 6 项:账号鉴权、CLI 接入、增量同步、RAG 模式、i18n、三栏树 | ✅ 已实现(变更已归档)· 验收待确认 |
 | V1.0 | 智能化 | 知识图谱、评测自动化 | ⏳ 规划 |
+
+> V0.4 的 7 个 openspec 变更(account-auth / hash-first-node-sync / rag-sync-modes / web-i18n / kb-tree-layout / node-mcp-proxy,以及后续的 doc-tree-lazy-load、fix-login-auto-run)已全部归档,现行规范见 `openspec/specs/`。
+> **仍待实机确认的验收项**:双机联调(`akm-node login` 一条命令接入 → Ctrl+C 断开转离线)、真实 Hub(PG + 向量)下的 RAG 模式 E2E、中英文页面浏览器走查、`v0.2.0` 打 tag 后 release 产物齐全性。
 
 ## 5. 本批验收口径
 

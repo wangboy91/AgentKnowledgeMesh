@@ -2,6 +2,7 @@
 
 > 本文档是 V0.4 批次(见 [product-overview.md](product-overview.md) §3)的技术设计,是 openspec 变更的输入。
 > 状态:设计已评审要点 —— 账号体系 = admin+viewer 两级;节点接入 = CLI 登录换 token;RAG 模式 = 全局开关 + 文档级勾选;静态目录 = **待定不实施**。
+> 落地状态(2026-09-17):§2–§7、§9 对应的 openspec 变更已全部实现并归档,现行规范以 `openspec/specs/` 为准;本文档保留为设计沿革与决策依据,不再随实现演进更新。
 
 ## 1. 总览
 

@@ -1,0 +1,55 @@
+# 部署用 compose - Node 容器(源码构建)
+#
+# 适用:知识源机器本身就是 Docker 环境,希望节点也跑在容器里。
+#   只想在宿主机跑节点 → 用一键安装脚本(docs/deployment.md §2.1),更轻,不需要容器。
+#
+# 注意:本文件从源码构建镜像(`src/Dockerfile.node`),没有对应的 GHCR 发布镜像 ——
+#   发布流水线只推 Hub 镜像,节点镜像是就地构建的产物。
+#
+# 用法(仓库根目录,两步:先登录拿凭证,再常驻):
+#   # 1) 交互登录:输入 Hub 地址与管理员账号,凭证写入容器卷
+#   docker compose -f deploy/docker-compose.node.yml run --rm akm-node uv run python -m app login
+#   # 2) 常驻运行(注册 → 心跳 → 扫描同步)
+#   docker compose -f deploy/docker-compose.node.yml up -d
+#
+#   docker compose -f deploy/docker-compose.node.yml logs -f akm-node   # 看日志
+#   docker compose -f deploy/docker-compose.node.yml down               # 停止
+#
+# 配置(可选 .env,放 deploy/.env):
+#   KNOWLEDGE_DIR=/srv/knowledge                          # 本机知识库目录(只读;默认 ./knowledge)
+#   AKM_HUB_API_URL=http://host.docker.internal:8000/api   # 容器视角的 Hub 地址
+#   AKM_NODE_NAME=my-node                                  # Web「节点」页显示的名字
+#
+# ⚠️ 两点容易踩:
+#   1) 容器内 Hub 地址以本文件/部署 .env 的环境变量为准 —— 进程环境变量优先级高于凭证文件
+#      (`src/node/app/config.py` 的解析顺序),换 Hub 地址请改这里后 `up -d` 重建容器;
+#      容器内 `login` 的作用是换取 token,不会覆盖这里的地址。
+#   2) 未登录就启动:进程会因"节点尚未接入"退出并被 restart 策略拉起,日志反复出现该提示
+#      —— 按上面第 1 步先登录即可。
+#
+# 凭证与同步快照持久化在卷 akm-node-state(`/root/.akm-node`),重建容器不丢登录。
+
+services:
+  akm-node:
+    image: ${AKM_NODE_IMAGE:-akm-node:local}
+    build:
+      context: ../src
+      dockerfile: Dockerfile.node
+    container_name: akm-node
+    environment:
+      # 容器内访问宿主机上的 Hub:host.docker.internal(下方 extra_hosts 保证 Linux 也可用)
+      - AKM_HUB_API_URL=${AKM_HUB_API_URL:-http://host.docker.internal:8000/api}
+      - AKM_HUB_URL=${AKM_HUB_URL:-ws://host.docker.internal:8000/ws}
+      - AKM_NODE_NAME=${AKM_NODE_NAME:-akm-docker-node}
+      - AKM_KNOWLEDGE_ROOTS=/knowledge
+    volumes:
+      # 本机知识库目录(只读挂载,修改为你的实际路径或在 .env 中设置 KNOWLEDGE_DIR)
+      - ${KNOWLEDGE_DIR:-./knowledge}:/knowledge:ro
+      # 凭证 + 同步快照(等价于宿主机的 ~/.akm-node)
+      - akm-node-state:/root/.akm-node
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  akm-node-state:
