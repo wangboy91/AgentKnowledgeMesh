@@ -1,0 +1,60 @@
+# 部署用 compose - 外接已有 PostgreSQL 模式(不在容器内起数据库)
+#
+# 适用场景:已有一套装好 pgvector 扩展的 PostgreSQL(自建实例 / 云数据库),
+# 复用它,不额外部署 pgvector 容器。
+#
+# 前提(缺一不可):
+#   1. 该实例已安装 pgvector 扩展二进制包(应用启动时会自动 CREATE EXTENSION)
+#      安装方法: https://github.com/pgvector/pgvector
+#      云数据库(RDS 等)请确认支持 vector 扩展,否则 RAG 语义检索不可用
+#   2. 连接账号对目标库有建表权限
+#   3. 目标库建议专用(如 agentvault),应用会在库内自动建表
+#
+# 用法:与 Release 中下载的 docker-compose.external-pg.yml 放在同一目录,
+#   在 .env 中填写已有库的连接信息,然后
+#   docker compose -f docker-compose.external-pg.yml up -d
+#
+# .env 示例:
+#   KNOWLEDGE_DIR=/srv/knowledge
+#   AKM_DB_HOST=192.168.1.100          # 已有 PostgreSQL 地址(容器需能访问)
+#   AKM_DB_PORT=5432
+#   AKM_DB_NAME=agentvault
+#   AKM_DB_USER=postgres
+#   AKM_DB_PASSWORD=your-password
+#   AKM_ARK_API_KEY=你的Ark密钥         # 语义检索(RAG)必需
+#
+# 注意:akm-hub 跑在容器里。若已有 PostgreSQL 就在同一台 Docker 宿主机上,
+#   AKM_DB_HOST 用宿主机 IP(Windows/Mac 可用 host.docker.internal);
+#   若是另一个 compose 项目,建议将两个项目挂到同一 external network。
+
+services:
+  akm-hub:
+    image: ghcr.io/wangboy91/akm-hub:${AKM_HUB_VERSION:-latest}
+    container_name: akm-hub
+    ports:
+      - "8000:8000"
+    volumes:
+      # 本地知识库目录(只读挂载,修改为你的实际路径或在 .env 中设置 KNOWLEDGE_DIR)
+      - ${KNOWLEDGE_DIR:-./knowledge}:/knowledge:ro
+    environment:
+      - AKM_KNOWLEDGE_ROOTS=/knowledge
+      - AKM_DB_TYPE=postgres
+      # 已有库连接信息,全部来自 .env(未设置时 compose 直接报错提示)
+      - AKM_DB_HOST=${AKM_DB_HOST:?请在 .env 中设置 AKM_DB_HOST=已有 PostgreSQL 地址}
+      - AKM_DB_PORT=${AKM_DB_PORT:-5432}
+      - AKM_DB_NAME=${AKM_DB_NAME:-agentvault}
+      - AKM_DB_USER=${AKM_DB_USER:-postgres}
+      - AKM_DB_PASSWORD=${AKM_DB_PASSWORD:?请在 .env 中设置 AKM_DB_PASSWORD}
+      # 向量嵌入:默认走火山引擎 Ark(代码默认即 ark),API Key 由部署方
+      # 在本目录 .env 中提供(绝不打进镜像);不配置时语义检索报
+      # "AKM_ARK_API_KEY 未配置"。local 模式为可选依赖,随 Release 的镜像
+      # 未含 sentence-transformers,需要 local 请自建镜像(uv sync --extra local-embedding)
+      - AKM_EMBEDDING_PROVIDER=${AKM_EMBEDDING_PROVIDER:-ark}
+      - AKM_EMBEDDING_MODEL=${AKM_EMBEDDING_MODEL:-doubao-embedding-vision-250615}
+      - AKM_ARK_API_KEY=${AKM_ARK_API_KEY:-}
+      - AKM_ARK_BASE_URL=${AKM_ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      # 管理员账号:不设置 AKM_ADMIN_PASSWORD 时,首次启动生成随机密码
+      # 打印在容器日志中(docker compose logs akm-hub | grep 一次性密码)
+      - AKM_ADMIN_USERNAME=${AKM_ADMIN_USERNAME:-admin}
+      - AKM_ADMIN_PASSWORD=${AKM_ADMIN_PASSWORD:-}
+    restart: unless-stopped

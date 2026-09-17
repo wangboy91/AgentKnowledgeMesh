@@ -30,28 +30,33 @@
 | 模式 | compose 文件 | RAG(语义检索/自动向量化) | 适用 |
 | --- | --- | --- | --- |
 | **SQLite** | `docker-compose.yml` | ❌ **不支持** | 只要关键词检索、零依赖快速起步 |
-| **PostgreSQL** | `docker-compose.pg.yml` | ✅ 完整支持 | 需要语义检索(推荐) |
+| **PostgreSQL** | `docker-compose.pg.yml` | ✅ 完整支持 | 需要语义检索(推荐,自带 pgvector 容器) |
+| **外接已有 PostgreSQL** | `docker-compose.external-pg.yml` | ✅ 完整支持(前提见下) | 已有装好 pgvector 的 PostgreSQL,复用不自建 |
 
 > ⚠️ **RAG 功能依赖 PostgreSQL + pgvector 向量库**。SQLite 模式下向量库不可用:语义检索接口(`/api/rag/search`、MCP `search_documents mode=semantic`)返回错误,自动向量化不工作;关键词检索、文档同步、MCP 的 keyword 模式不受影响。Hub 启动日志中会看到 `Vector DB init failed` 警告,属 SQLite 模式的预期行为。
 
 两种模式除 compose 文件与数据库外完全一致,后续升级可从 SQLite 换到 PostgreSQL(用 `src/server/scripts/migrate_sqlite_to_pg.py` 迁移数据)。
 
+外接已有 PostgreSQL 模式的前提:该实例已安装 pgvector 扩展二进制包(应用启动时自动 `CREATE EXTENSION`;云数据库需确认支持 vector 扩展)、连接账号有建表权限、容器能访问该地址(同宿主机的库用宿主机 IP,Windows/Mac 可用 `host.docker.internal`)。在 `.env` 中填 `AKM_DB_HOST` / `AKM_DB_PORT` / `AKM_DB_NAME` / `AKM_DB_USER` / `AKM_DB_PASSWORD` 即可,详见 compose 文件头部注释。
+
 ### 1.3 启动
 
-从 [GitHub Releases](https://github.com/wangboy91/AgentKnowledgeMesh/releases) 下载所需模式的 `docker-compose.yml`(SQLite)或 `docker-compose.pg.yml`(PostgreSQL,内含 pgvector 数据库容器),同目录可选创建 `.env`:
+从 [GitHub Releases](https://github.com/wangboy91/AgentKnowledgeMesh/releases) 下载所需模式的 `docker-compose.yml`(SQLite)、`docker-compose.pg.yml`(PostgreSQL,内含 pgvector 数据库容器)或 `docker-compose.external-pg.yml`(外接已有 PostgreSQL),同目录可选创建 `.env`:
 
 ```bash
 # .env 示例
 KNOWLEDGE_DIR=/srv/knowledge      # 本机知识库目录(挂载为只读)
 AKM_ADMIN_USERNAME=admin
 AKM_ADMIN_PASSWORD=改成强密码      # 不设则首启生成随机密码,见 1.4
-POSTGRES_PASSWORD=改成强密码       # 仅 PostgreSQL 模式
-AKM_ARK_API_KEY=你的Ark密钥        # 仅 PostgreSQL 模式:语义检索(RAG)必需,见 1.5
+POSTGRES_PASSWORD=改成强密码       # 仅 PostgreSQL 模式(自带容器)
+AKM_ARK_API_KEY=你的Ark密钥        # 需要 RAG 的模式必需,见 1.5
+AKM_DB_HOST=192.168.1.100         # 仅外接已有 PostgreSQL 模式,另见 AKM_DB_PORT/NAME/USER/PASSWORD
 ```
 
 ```bash
 docker compose up -d                      # SQLite 模式
 docker compose -f docker-compose.pg.yml up -d   # PostgreSQL 模式(含 RAG)
+docker compose -f docker-compose.external-pg.yml up -d  # 外接已有 PostgreSQL 模式
 ```
 
 浏览器打开 `http://<服务器IP>:8000` 即为 Web 界面(与 API 同端口)。

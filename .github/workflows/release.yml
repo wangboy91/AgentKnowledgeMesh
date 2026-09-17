@@ -57,6 +57,8 @@ jobs:
             deploy/docker-compose.yml > release-assets/docker-compose.yml
           sed "s/\${AKM_HUB_VERSION:-latest}/${{ github.ref_name }}/g" \
             deploy/docker-compose.pg.yml > release-assets/docker-compose.pg.yml
+          sed "s/\${AKM_HUB_VERSION:-latest}/${{ github.ref_name }}/g" \
+            deploy/docker-compose.external-pg.yml > release-assets/docker-compose.external-pg.yml
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -69,3 +71,4 @@ jobs:
             deploy/install-akm-node.ps1
             release-assets/docker-compose.yml
             release-assets/docker-compose.pg.yml
+            release-assets/docker-compose.external-pg.yml

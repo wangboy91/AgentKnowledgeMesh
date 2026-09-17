@@ -100,6 +100,7 @@ uv run akm-node         # 无头常驻:注册、心跳、hash-first 增量同步
 ```bash
 KNOWLEDGE_DIR=~/Knowledge docker compose up -d        # Hub(SQLite,无 RAG)
 docker compose -f docker-compose.pg.yml up -d         # Hub(PostgreSQL + pgvector,含 RAG)
+docker compose -f docker-compose.external-pg.yml up -d  # Hub(外接已有 PostgreSQL,含 RAG)
 docker compose -f docker-compose.node.yml up -d       # Node
 ```
 

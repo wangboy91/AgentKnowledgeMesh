@@ -43,7 +43,7 @@ services:
 
   # pgvector 官方镜像(内置 vector 扩展,普通 postgres 镜像没有,RAG 必需)
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18
     container_name: akm-postgres
     volumes:
       - postgres-data:/var/lib/postgresql/data
