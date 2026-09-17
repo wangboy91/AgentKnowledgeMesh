@@ -8,7 +8,7 @@
 
 ### Requirement: Hub 容器镜像分发
 
-系统 SHALL 在版本 tag(`v*`)推送时自动构建 Hub 单容器镜像(前端静态资源与 server 同镜像、单端口对外)并发布到 GHCR(`ghcr.io/wangboy91/akm-hub`,tag 含版本号与 `latest`);镜像构建 SHALL 排除虚拟环境、测试代码、本地数据与含密钥的 `.env` 文件;镜像 SHALL 支持通过环境变量配置管理员账号(`AKM_ADMIN_USERNAME`/`AKM_ADMIN_PASSWORD`)与知识库根目录挂载,数据 SHALL 持久化于卷。
+系统 SHALL 在版本 tag(`v*`)推送时自动构建 Hub 单容器镜像(前端静态资源与 server 同镜像、单端口对外)并发布到 GHCR(`ghcr.io/wangboy91/akm-hub`,tag 含版本号与 `latest`);镜像构建 SHALL 排除虚拟环境、测试代码、本地数据与含密钥的 `.env` 文件;镜像 SHALL 支持通过环境变量配置管理员账号(`AKM_ADMIN_USERNAME`/`AKM_ADMIN_PASSWORD`)与知识库根目录挂载,数据 SHALL 持久化于卷;PostgreSQL 模式的分发 compose SHALL 透传向量嵌入配置(`AKM_EMBEDDING_PROVIDER`/`AKM_EMBEDDING_MODEL`/`AKM_ARK_API_KEY`/`AKM_ARK_BASE_URL`,默认火山引擎 Ark,API Key 由部署方经部署目录 `.env` 注入,SHALL NOT 打入镜像);local 嵌入供应商 SHALL 作为可选依赖 extra(`local-embedding`)提供,分发镜像 SHALL NOT 默认包含 sentence-transformers/torch,依赖缺失时 SHALL 报出含安装指引的明确错误。
 
 #### Scenario: 拉取镜像一键起服务
 - **WHEN** 部署方在装有 Docker 的机器上,使用随 Release 提供的 compose 文件(镜像指向 GHCR 版本 tag)执行 `docker compose up -d`
@@ -17,6 +17,14 @@
 #### Scenario: 首次启动管理员初始化
 - **WHEN** 容器以空数据卷首次启动且配置了 `AKM_ADMIN_USERNAME`/`AKM_ADMIN_PASSWORD`
 - **THEN** 系统创建对应管理员账号,部署方可直接登录
+
+#### Scenario: 语义检索嵌入 Key 经环境变量注入
+- **WHEN** 部署方以 PostgreSQL 模式 compose 启动,且在部署目录 `.env` 中配置 `AKM_ARK_API_KEY`
+- **THEN** 容器内嵌入走火山引擎 Ark,语义检索可用;不配置时语义检索返回明确的"AKM_ARK_API_KEY 未配置"错误,密钥不存在于镜像层
+
+#### Scenario: 镜像不含 local 嵌入依赖
+- **WHEN** 检查发布镜像内的 Python 环境
+- **THEN** 不存在 sentence-transformers/torch;配置 `AKM_EMBEDDING_PROVIDER=local` 时报出包含 `uv sync --extra local-embedding` 指引的明确错误,而非裸 ImportError
 
 #### Scenario: 镜像不含密钥与开发产物
 - **WHEN** 检查发布镜像的文件层

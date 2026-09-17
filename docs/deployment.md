@@ -25,26 +25,40 @@
 - Docker 与 Docker Compose v2
 - 一个存放知识库 Markdown 的目录(只读挂载给 Hub;由节点同步的文档则来自各节点机器)
 
-### 1.2 启动
+### 1.2 选择数据库模式(决定是否有 RAG)
 
-从 [GitHub Releases](https://github.com/wangboy91/AgentKnowledgeMesh/releases) 下载 `docker-compose.yml`(版本已固化),同目录可选创建 `.env`:
+| 模式 | compose 文件 | RAG(语义检索/自动向量化) | 适用 |
+| --- | --- | --- | --- |
+| **SQLite** | `docker-compose.yml` | ❌ **不支持** | 只要关键词检索、零依赖快速起步 |
+| **PostgreSQL** | `docker-compose.pg.yml` | ✅ 完整支持 | 需要语义检索(推荐) |
+
+> ⚠️ **RAG 功能依赖 PostgreSQL + pgvector 向量库**。SQLite 模式下向量库不可用:语义检索接口(`/api/rag/search`、MCP `search_documents mode=semantic`)返回错误,自动向量化不工作;关键词检索、文档同步、MCP 的 keyword 模式不受影响。Hub 启动日志中会看到 `Vector DB init failed` 警告,属 SQLite 模式的预期行为。
+
+两种模式除 compose 文件与数据库外完全一致,后续升级可从 SQLite 换到 PostgreSQL(用 `src/server/scripts/migrate_sqlite_to_pg.py` 迁移数据)。
+
+### 1.3 启动
+
+从 [GitHub Releases](https://github.com/wangboy91/AgentKnowledgeMesh/releases) 下载所需模式的 `docker-compose.yml`(SQLite)或 `docker-compose.pg.yml`(PostgreSQL,内含 pgvector 数据库容器),同目录可选创建 `.env`:
 
 ```bash
 # .env 示例
 KNOWLEDGE_DIR=/srv/knowledge      # 本机知识库目录(挂载为只读)
 AKM_ADMIN_USERNAME=admin
-AKM_ADMIN_PASSWORD=改成强密码      # 不设则首启生成随机密码,见 1.3
+AKM_ADMIN_PASSWORD=改成强密码      # 不设则首启生成随机密码,见 1.4
+POSTGRES_PASSWORD=改成强密码       # 仅 PostgreSQL 模式
+AKM_ARK_API_KEY=你的Ark密钥        # 仅 PostgreSQL 模式:语义检索(RAG)必需,见 1.5
 ```
 
 ```bash
-docker compose up -d
+docker compose up -d                      # SQLite 模式
+docker compose -f docker-compose.pg.yml up -d   # PostgreSQL 模式(含 RAG)
 ```
 
 浏览器打开 `http://<服务器IP>:8000` 即为 Web 界面(与 API 同端口)。
 
 固定版本部署:compose 中镜像 tag 即发布版本(如 `ghcr.io/wangboy91/akm-hub:v0.2.0`),回滚改回旧 tag 重启即可;也可用环境变量 `AKM_HUB_VERSION=v0.2.0` 指定。
 
-### 1.3 管理员初始化
+### 1.4 管理员初始化
 
 - 配置了 `AKM_ADMIN_PASSWORD` → 首次启动(空数据库)直接用该账号登录;
 - 未配置 → 首次启动生成随机一次性密码,打印在容器日志:
@@ -55,16 +69,35 @@ docker compose logs akm-hub | grep 一次性密码
 
 登录后建议立即在 Web「设置」页修改密码。忘记密码时,在 Hub 所在机器进入容器执行 `uv run akm-hub reset-password admin`(需源码方式,容器内可 `docker compose exec akm-hub uv run akm-hub reset-password admin`)。
 
-### 1.4 数据持久化
+### 1.5 嵌入模型配置(火山引擎 Ark,PostgreSQL 模式)
+
+语义检索(RAG)的向量嵌入**默认走火山引擎 Ark**(`doubao-embedding` 系列),API Key 由部署方提供,通过环境变量注入容器(密钥只存在部署机本地的 `.env`,不会进镜像):
+
+```bash
+# .env(PostgreSQL 模式)
+AKM_ARK_API_KEY=你的Ark密钥        # 必填,否则语义检索报 "AKM_ARK_API_KEY 未配置"
+# 可选覆盖项(默认值如下,一般不用改)
+# AKM_EMBEDDING_MODEL=doubao-embedding-vision-250615
+# AKM_ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+```
+
+- 获取 Key:[火山引擎 Ark 控制台](https://console.volcengine.com/ark);
+- 想离线免 Key:设 `AKM_EMBEDDING_PROVIDER=local`(本地 sentence-transformers 模型)。注意 local 是**可选依赖**,随 Release 分发的镜像为控制体积未包含:需要 local 请基于源码自建镜像(`src/Dockerfile` 的 `uv sync` 加 `--extra local-embedding`);
+- 改完 `.env` 后 `docker compose -f docker-compose.pg.yml up -d` 重建容器生效。
+
+SQLite 模式不涉及嵌入配置(无向量库,RAG 不可用,见 §1.2)。
+
+### 1.6 数据持久化
 
 | 内容 | 位置 |
 | --- | --- |
-| SQLite 数据库 | 卷 `akm-hub-data`(`AKM_DB_PATH=/app/data/agentvault.db`) |
+| SQLite 数据库 | 卷 `akm-hub-data`(`AKM_DB_PATH=/app/data/agentvault.db`,SQLite 模式) |
+| PostgreSQL 数据 | 卷 `postgres-data`(PostgreSQL 模式) |
 | 知识库目录 | 宿主机 `KNOWLEDGE_DIR` 只读挂载 `/knowledge` |
 
-备份即备份该卷;PostgreSQL 模式参见仓库 `src/docker-compose.pg.yml`(自行构建镜像或参照改造)。
+备份即备份对应卷。
 
-### 1.5 GHCR 镜像可见性
+### 1.7 GHCR 镜像可见性
 
 首次由 Actions 推送的包在 GHCR 可能默认为 private:到 GitHub → Packages → `akm-hub` → Package settings → Change visibility → Public,否则其他机器 `docker pull` 需要登录。
 
@@ -139,7 +172,7 @@ AKM_KNOWLEDGE_ROOTS=/path/to/notes,/path/to/docs   # 逗号分隔多个
 
 | 工具 | 说明 |
 | --- | --- |
-| `search_documents` | 关键词检索;`mode=semantic` 走 Hub 语义混合检索 |
+| `search_documents` | 关键词检索;`mode=semantic` 走 Hub 语义混合检索(**需 Hub 为 PostgreSQL 模式**,SQLite 模式返回错误,见 §1.2) |
 | `get_document` | 取文档全文 |
 | `list_documents` | 列文档(可按节点过滤) |
 
@@ -157,7 +190,9 @@ claude mcp add agentknowledge -- akm-node --mcp
 
 | 问题 | 处理 |
 | --- | --- |
-| `docker pull ghcr.io/...` 401/无权限 | GHCR 包还是 private,见 §1.5 |
+| `docker pull ghcr.io/...` 401/无权限 | GHCR 包还是 private,见 §1.7 |
+| 语义检索报 `AKM_ARK_API_KEY 未配置` | 未配置火山引擎 Key,在部署目录 `.env` 加 `AKM_ARK_API_KEY=...` 后重建容器(见 §1.5);或改用本地模型 `AKM_EMBEDDING_PROVIDER=local` |
+| 语义检索报错 / 日志有 `Vector DB init failed` | Hub 是 SQLite 模式,不支持 RAG(见 §1.2);需要语义检索请用 `docker-compose.pg.yml` 部署 PostgreSQL 模式 |
 | PowerShell 远程脚本被策略拦截 | 下载脚本后 `powershell -ExecutionPolicy Bypass -File install-akm-node.ps1` |
 | 安装后新终端才有 `akm-node` | PATH 刷新所致,重开终端即可 |
 | 节点凭证失效(Web 端重置过 token) | 重新 `akm-node login` |

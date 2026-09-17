@@ -79,7 +79,14 @@ def _get_local_model():
     """获取或加载本地 sentence-transformers 模型."""
     global _local_model
     if _local_model is None:
-        from sentence_transformers import SentenceTransformer
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as e:
+            raise RuntimeError(
+                "local 嵌入需要可选依赖 sentence-transformers:"
+                "源码方式执行 `uv sync --extra local-embedding` 安装,"
+                "或改用默认的 ark 供应商(配置 AKM_EMBEDDING_PROVIDER=ark)"
+            ) from e
 
         logger.info(f"Loading local embedding model: {settings.embedding_model}")
         _local_model = SentenceTransformer(settings.embedding_model)

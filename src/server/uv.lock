@@ -21,7 +21,7 @@ wheels = [
 
 [[package]]
 name = "akm-server"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
@@ -38,7 +38,6 @@ dependencies = [
     { name = "pymupdf4llm" },
     { name = "python-docx" },
     { name = "python-multipart" },
-    { name = "sentence-transformers" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -48,6 +47,9 @@ dev = [
     { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+]
+local-embedding = [
+    { name = "sentence-transformers" },
 ]
 
 [package.metadata]
@@ -69,15 +71,15 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
     { name = "python-docx", specifier = ">=0.8.11" },
     { name = "python-multipart", specifier = ">=0.0.9" },
-    { name = "sentence-transformers", specifier = ">=2.0.0" },
+    { name = "sentence-transformers", marker = "extra == 'local-embedding'", specifier = ">=2.0.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.35" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["local-embedding", "dev"]
 
 [[package]]
 name = "akm-shared"
-version = "0.1.0"
+version = "0.2.0"
 source = { directory = "../shared" }
 
 [[package]]

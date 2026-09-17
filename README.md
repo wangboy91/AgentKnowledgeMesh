@@ -98,10 +98,12 @@ uv run akm-node         # 无头常驻:注册、心跳、hash-first 增量同步
 ### Docker
 
 ```bash
-KNOWLEDGE_DIR=~/Knowledge docker compose up -d        # Hub(SQLite)
-docker compose -f docker-compose.pg.yml up -d         # Hub(PostgreSQL)
+KNOWLEDGE_DIR=~/Knowledge docker compose up -d        # Hub(SQLite,无 RAG)
+docker compose -f docker-compose.pg.yml up -d         # Hub(PostgreSQL + pgvector,含 RAG)
 docker compose -f docker-compose.node.yml up -d       # Node
 ```
+
+> ⚠️ **RAG(语义检索/自动向量化)依赖 PostgreSQL + pgvector,SQLite 模式不支持**:SQLite 模式下语义检索接口与 MCP `mode=semantic` 返回错误、自动向量化不工作(启动日志有 `Vector DB init failed` 警告,属预期);关键词检索与文档同步不受影响。需要 RAG 请用 PostgreSQL 模式。详见 [docs/deployment.md §1.2](docs/deployment.md)。
 
 正式部署(拉取 GHCR 发布镜像 + 各机器一键安装 akm-node)见 **[docs/deployment.md](docs/deployment.md)**。
 
@@ -130,7 +132,7 @@ docker compose -f docker-compose.node.yml up -d       # Node
 { "mcpServers": { "agentknowledge": { "command": "akm-node", "args": ["--mcp"] } } }
 ```
 
-节点代理经 stdio 提供与 Hub 同名的三个工具(`search_documents` / `get_document` / `list_documents`),内部转调 Hub HTTP API(统一 10s 超时);`search_documents` 支持 `mode=semantic` 走 Hub 语义混合检索(向量⊕关键词按权重融合);节点本地无凭证(未执行过 `akm-node login`)时会输出"请先执行 akm-node login"并退出。
+节点代理经 stdio 提供与 Hub 同名的三个工具(`search_documents` / `get_document` / `list_documents`),内部转调 Hub HTTP API(统一 10s 超时);`search_documents` 支持 `mode=semantic` 走 Hub 语义混合检索(向量⊕关键词按权重融合,**需 Hub 为 PostgreSQL 模式**);节点本地无凭证(未执行过 `akm-node login`)时会输出"请先执行 akm-node login"并退出。
 
 远程/无节点机器用 Hub:SSE 模式 `"url": "http://localhost:8000/api/mcp/sse"`(需在 Web「设置」页创建 API Token),或 Hub 本机 stdio 模式 `"command": "uv", "args": ["run", "akm-hub", "--mcp"]`。三种接入形态工具集与返回格式完全一致。测试:`npx @modelcontextprotocol/inspector http://localhost:8000/api/mcp/sse`。
 
@@ -144,7 +146,7 @@ docker compose -f docker-compose.node.yml up -d       # Node
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `AKM_PORT` | `8000` | Hub 端口 |
-| `AKM_DB_TYPE` | `sqlite` | `sqlite` / `postgres` |
+| `AKM_DB_TYPE` | `sqlite` | `sqlite` / `postgres`(**RAG 语义检索仅 postgres,需 pgvector**) |
 | `AKM_KNOWLEDGE_ROOTS` | `~/Knowledge` | 知识库目录(逗号分隔多个) |
 | `AKM_EMBEDDING_PROVIDER` | 模板内 `local` | `local`(离线)/ `ark`(火山引擎,中文更好) |
 | `AKM_HUB_URL`(node) | `ws://localhost:8000/ws` | Hub 地址 |

@@ -1,0 +1,62 @@
+# 部署用 compose - PostgreSQL 模式(完整功能,含 RAG 语义检索)
+#
+# 与 SQLite 版(docker-compose.yml)的区别:附带 pgvector 数据库容器,
+# 支持语义检索/自动向量化。需要 RAG 功能请用本文件部署。
+#
+# 用法:与 Release 中下载的 docker-compose.pg.yml 放在同一目录,
+#   可选创建 .env 设置 KNOWLEDGE_DIR / AKM_ADMIN_USERNAME / AKM_ADMIN_PASSWORD / POSTGRES_PASSWORD
+#   然后 docker compose -f docker-compose.pg.yml up -d
+
+services:
+  akm-hub:
+    image: ghcr.io/wangboy91/akm-hub:${AKM_HUB_VERSION:-latest}
+    container_name: akm-hub
+    ports:
+      - "8000:8000"
+    volumes:
+      # 本地知识库目录(只读挂载,修改为你的实际路径或在 .env 中设置 KNOWLEDGE_DIR)
+      - ${KNOWLEDGE_DIR:-./knowledge}:/knowledge:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - AKM_KNOWLEDGE_ROOTS=/knowledge
+      - AKM_DB_TYPE=postgres
+      - AKM_DB_HOST=postgres
+      - AKM_DB_PORT=5432
+      - AKM_DB_NAME=agentvault
+      - AKM_DB_USER=postgres
+      - AKM_DB_PASSWORD=${POSTGRES_PASSWORD:-agentvault}
+      # 向量嵌入:默认走火山引擎 Ark(代码默认即 ark),API Key 由部署方
+      # 在本目录 .env 中提供(绝不打进镜像);不配置时语义检索报
+      # "AKM_ARK_API_KEY 未配置"。local 模式为可选依赖,随 Release 的镜像
+      # 未含 sentence-transformers,需要 local 请自建镜像(uv sync --extra local-embedding)
+      - AKM_EMBEDDING_PROVIDER=${AKM_EMBEDDING_PROVIDER:-ark}
+      - AKM_EMBEDDING_MODEL=${AKM_EMBEDDING_MODEL:-doubao-embedding-vision-250615}
+      - AKM_ARK_API_KEY=${AKM_ARK_API_KEY:-}
+      - AKM_ARK_BASE_URL=${AKM_ARK_BASE_URL:-https://ark.cn-beijing.volces.com/api/v3}
+      # 管理员账号:不设置 AKM_ADMIN_PASSWORD 时,首次启动生成随机密码
+      # 打印在容器日志中(docker compose logs akm-hub | grep 一次性密码)
+      - AKM_ADMIN_USERNAME=${AKM_ADMIN_USERNAME:-admin}
+      - AKM_ADMIN_PASSWORD=${AKM_ADMIN_PASSWORD:-}
+    restart: unless-stopped
+
+  # pgvector 官方镜像(内置 vector 扩展,普通 postgres 镜像没有,RAG 必需)
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: akm-postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=agentvault
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-agentvault}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

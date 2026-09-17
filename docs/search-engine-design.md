@@ -50,7 +50,7 @@
 
 ### 2.3 向量嵌入（`embeddings.py`）
 
-- 多供应商：`ark`（火山引擎 doubao-embedding 系列）／`local`（sentence-transformers）。每文本独立请求（ark multimodal 接口单次单向量）。
+- 多供应商：`ark`（火山引擎 doubao-embedding 系列，默认）／`local`（sentence-transformers，可选依赖 `local-embedding`，需 `uv sync --extra local-embedding`，随 Release 分发的镜像不含）。每文本独立请求（ark multimodal 接口单次单向量）。
 - 维度自动探测（首次嵌入），写入表结构；切换模型时 `init_table` 检测维度不匹配自动**重建表**（旧向量废弃需全量重索引）。
 - ⚠️ **模型名待核对**：当前 `.env` 为 `AKM_EMBEDDING_MODEL=doubao-embedding-vision`，而 `.env.example`/默认值为 `doubao-embedding-vision-250615`。若模型名不生效，会回落旧维度、相似度分布偏低。这是诊断项之一。
 

@@ -50,6 +50,7 @@
 - uv 固定版本(`ghcr.io/astral-sh/uv:0.12.5`),避免 `latest` 漂移破坏构建。
 - **torch CPU 化(实现中发现)**:`sentence-transformers` 依赖的 torch 在 Linux PyPI 轮子捆绑 CUDA(nvidia 3.2G + torch 1.1G + triton 0.9G),镜像达 9.7G。处理:`uv sync` 后**同一层内** `uv pip install torch==$VER --torch-backend=cpu --reinstall-package torch` 并卸载 nvidia/triton 组件(必须同层,Docker 后层删除不减小镜像);uv 下载缓存走 BuildKit `--mount=type=cache`(否则 6.5G 缓存进层);层内以 `import torch; assert '+cpu'` 自检。构建时先下载 CUDA torch 仅为取版本号,一次性成本,Actions 网络快可忽略。瘦身效果:venv 5.8G→1.5G。
 - Actions 构建镜像用 `src/` 为 context(与本地一致),推 `ghcr.io/wangboy91/akm-hub:<tag>` 与 `:latest`。
+- **部署编排双 compose(补充)**:RAG 语义检索依赖 PostgreSQL + pgvector,SQLite 模式下 RAG 降级不可用(语义接口返回错误,启动日志告警)。随 Release 分发两个 compose:SQLite 版(零依赖,无 RAG)与 PostgreSQL 版(`pgvector/pgvector:pg16`,含 RAG);README 与部署文档均显著标注该能力差异。仓库 `src/docker-compose.pg.yml` 原用 `postgres:16-alpine`(无 pgvector 扩展,RAG 初始化必失败),已修为 pgvector 官方镜像。
 
 ### D5:安装脚本策略
 

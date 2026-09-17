@@ -1,4 +1,8 @@
-# 部署用 compose(随 GitHub Release 分发)
+# 部署用 compose(随 GitHub Release 分发)- SQLite 模式
+#
+# ⚠️ SQLite 模式不支持 RAG(语义检索 / 自动向量化):向量库依赖 PostgreSQL + pgvector,
+#    SQLite 模式下这些功能降级不可用,语义检索接口返回错误。
+#    需要完整功能(含语义检索)请用随 Release 分发的 docker-compose.pg.yml。
 #
 # 用法:与 Release 中下载的 docker-compose.yml 放在同一目录,
 #   可选创建 .env 设置 KNOWLEDGE_DIR / AKM_ADMIN_USERNAME / AKM_ADMIN_PASSWORD
@@ -7,7 +11,6 @@
 # 说明:
 # - Release 分发版会将 ${AKM_HUB_VERSION:-latest} 替换为具体版本 tag(可复现部署);
 #   手动从仓库取用时默认 latest。
-# - PostgreSQL 模式见仓库 src/docker-compose.pg.yml。
 
 services:
   akm-hub:
