@@ -37,20 +37,14 @@
 
 两种模式除 compose 文件与数据库外完全一致,后续升级可从 SQLite 换到 PostgreSQL(用 `src/server/scripts/migrate_sqlite_to_pg.py` 迁移数据)。
 
-外接已有 PostgreSQL 模式的前提:该实例已安装 pgvector 扩展二进制包(应用启动时自动 `CREATE EXTENSION`;云数据库需确认支持 vector 扩展)、连接账号有建表权限、容器能访问该地址(同宿主机的库用宿主机 IP,Windows/Mac 可用 `host.docker.internal`)。在 `.env` 中填 `AKM_DB_HOST` / `AKM_DB_PORT` / `AKM_DB_NAME` / `AKM_DB_USER` / `AKM_DB_PASSWORD` 即可,详见 compose 文件头部注释。
+外接已有 PostgreSQL 模式的前提:该实例已安装 pgvector 扩展二进制包(应用启动时自动 `CREATE EXTENSION`;云数据库需确认支持 vector 扩展)、连接账号有建表权限、容器能访问该地址(同宿主机的库用宿主机 IP,Windows/Mac 可用 `host.docker.internal`)。在 `.env` 中填 `AKM_DB_HOST` / `AKM_DB_PORT` / `AKM_DB_NAME` / `AKM_DB_USER` / `AKM_DB_PASSWORD` 即可(见 §1.3 与 `.env.example`)。
 
 ### 1.3 启动
 
-从 [GitHub Releases](https://github.com/wangboy91/AgentKnowledgeMesh/releases) 下载所需模式的 `docker-compose.yml`(SQLite)、`docker-compose.pg.yml`(PostgreSQL,内含 pgvector 数据库容器)或 `docker-compose.external-pg.yml`(外接已有 PostgreSQL),同目录可选创建 `.env`:
+从 [GitHub Releases](https://github.com/wangboy91/AgentKnowledgeMesh/releases) 下载所需模式的 `docker-compose.yml`(SQLite)、`docker-compose.pg.yml`(PostgreSQL,内含 pgvector 数据库容器)或 `docker-compose.external-pg.yml`(外接已有 PostgreSQL),与同目录的 `.env.example` 放在一起:
 
 ```bash
-# .env 示例
-KNOWLEDGE_DIR=/srv/knowledge      # 本机知识库目录(挂载为只读)
-AKM_ADMIN_USERNAME=admin
-AKM_ADMIN_PASSWORD=改成强密码      # 不设则首启生成随机密码,见 1.4
-POSTGRES_PASSWORD=改成强密码       # 仅 PostgreSQL 模式(自带容器)
-AKM_ARK_API_KEY=你的Ark密钥        # 需要 RAG 的模式必需,见 1.5
-AKM_DB_HOST=192.168.1.100         # 仅外接已有 PostgreSQL 模式,另见 AKM_DB_PORT/NAME/USER/PASSWORD
+cp .env.example .env    # 然后按需修改;compose 会自动读取同目录的 .env
 ```
 
 ```bash
@@ -58,6 +52,20 @@ docker compose up -d                      # SQLite 模式
 docker compose -f docker-compose.pg.yml up -d   # PostgreSQL 模式(含 RAG)
 docker compose -f docker-compose.external-pg.yml up -d  # 外接已有 PostgreSQL 模式
 ```
+
+**需要关注的 `.env` 变量**(完整清单与逐项说明见 `.env.example`):
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `KNOWLEDGE_DIR` | `./knowledge` | 本机知识库目录(只读挂载到容器 `/knowledge`) |
+| `AKM_HUB_PORT` | `18000` | Hub 对宿主机暴露的端口(容器内固定 8000) |
+| `AKM_ADMIN_USERNAME` / `AKM_ADMIN_PASSWORD` | `admin` / 空 | 管理员账号;不设密码则首启生成随机密码(见 §1.4) |
+| `POSTGRES_PASSWORD` | `agentvault` | 仅自带 PG 模式;**生产必改** |
+| `AKM_DB_HOST` / `AKM_DB_PORT` / `AKM_DB_NAME` / `AKM_DB_USER` / `AKM_DB_PASSWORD` | — | 仅外接已有 PostgreSQL 模式;未填 `AKM_DB_HOST` / `AKM_DB_PASSWORD` 时 compose 直接报错,不会静默连错库 |
+| `AKM_ARK_API_KEY` | 空 | 需要 RAG 的模式必需(见 §1.5) |
+| `AKM_HUB_VERSION` | `latest` | 镜像 tag;Release 分发包已固定为版本号 |
+
+> 所有可调项都走环境变量,改配置不需要动 compose 文件本身。容器名(`AKM_HUB_CONTAINER_NAME` / `AKM_POSTGRES_CONTAINER_NAME`)、pgvector 镜像 tag(`AKM_PGVECTOR_TAG`)等同理。
 
 浏览器打开 `http://<服务器IP>:8000` 即为 Web 界面(与 API 同端口)。
 
@@ -125,7 +133,7 @@ docker compose -f deploy/docker-compose.external-pg.yml -f deploy/docker-compose
 
 `deploy/docker-compose.build.yml` 是**叠加文件**:只把 `akm-hub` 的镜像来源改成从 `src/` 本地构建,管理员账号、知识目录挂载、数据卷、数据库连接、Ark 嵌入透传等配置全部继承基础 compose —— 因此源码构建与镜像部署的行为一致,只有镜像来源不同。它不能单独执行。
 
-`.env` 变量与镜像部署完全相同(见 §1.3 / §1.5),另有两个只对源码构建生效的变量:
+`.env` 变量与镜像部署完全相同(见 §1.3 / §1.5,仓库中为 `deploy/.env.example`),另有两个只对源码构建生效的变量:
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
@@ -219,7 +227,8 @@ docker compose -f deploy/docker-compose.node.yml up -d
 
 - **凭证与同步快照在卷 `akm-node-state`**(容器内 `/root/.akm-node`),重建容器不丢登录;换机器/换卷需重新登录;
 - **Hub 地址以 compose 环境变量为准**(`AKM_HUB_API_URL` / `AKM_HUB_URL`,默认 `host.docker.internal:8000`)。因为进程环境变量优先级高于凭证文件,换 Hub 地址改 `.env` 后 `up -d` 重建容器即可,容器内 `login` 只负责换 token;
-- 知识库目录由 `KNOWLEDGE_DIR` 只读挂载到 `/knowledge`(与 Hub 容器同一套变量);
+  - ⚠️ **端口要对上 Hub 实际暴露的宿主机端口**:Hub 用 deploy compose 起时是 `AKM_HUB_PORT`(默认 `18000`),Hub 在宿主机直接跑(`uv run akm-hub`)才是 `8000`;
+- 知识库目录由 `KNOWLEDGE_DIR` 只读挂载到 `/knowledge`(与 Hub 容器同一套变量);节点侧全部变量见 `deploy/.env.example` §7;
 - 未登录就 `up -d` 会看到容器反复重启并打印"节点尚未接入",先执行第 1 步即可。
 
 容器方式只影响节点进程怎么跑;Hub 侧看到的是一个普通节点,`akm-node --mcp` 的 MCP 接入(下节)在容器里同样可用(`docker compose -f deploy/docker-compose.node.yml exec akm-node uv run python -m app --mcp`)。

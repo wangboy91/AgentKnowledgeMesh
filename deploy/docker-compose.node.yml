@@ -15,7 +15,7 @@
 #   docker compose -f deploy/docker-compose.node.yml logs -f akm-node   # 看日志
 #   docker compose -f deploy/docker-compose.node.yml down               # 停止
 #
-# 配置(可选 .env,放 deploy/.env):
+# 配置(可选 .env,放 deploy/.env;完整清单见 deploy/.env.example §7):
 #   KNOWLEDGE_DIR=/srv/knowledge                          # 本机知识库目录(只读;默认 ./knowledge)
 #   AKM_HUB_API_URL=http://host.docker.internal:8000/api   # 容器视角的 Hub 地址
 #   AKM_NODE_NAME=my-node                                  # Web「节点」页显示的名字
@@ -24,6 +24,7 @@
 #   1) 容器内 Hub 地址以本文件/部署 .env 的环境变量为准 —— 进程环境变量优先级高于凭证文件
 #      (`src/node/app/config.py` 的解析顺序),换 Hub 地址请改这里后 `up -d` 重建容器;
 #      容器内 `login` 的作用是换取 token,不会覆盖这里的地址。
+#      另注意端口要对上 Hub 实际暴露的宿主机端口(deploy compose 默认 18000,宿主机直跑是 8000)。
 #   2) 未登录就启动:进程会因"节点尚未接入"退出并被 restart 策略拉起,日志反复出现该提示
 #      —— 按上面第 1 步先登录即可。
 #
@@ -35,7 +36,7 @@ services:
     build:
       context: ../src
       dockerfile: Dockerfile.node
-    container_name: akm-node
+    container_name: ${AKM_NODE_CONTAINER_NAME:-akm-node}
     environment:
       # 容器内访问宿主机上的 Hub:host.docker.internal(下方 extra_hosts 保证 Linux 也可用)
       - AKM_HUB_API_URL=${AKM_HUB_API_URL:-http://host.docker.internal:8000/api}

@@ -72,3 +72,4 @@ jobs:
             release-assets/docker-compose.yml
             release-assets/docker-compose.pg.yml
             release-assets/docker-compose.external-pg.yml
+            deploy/.env.example

@@ -11,10 +11,10 @@
 #   3. 目标库建议专用(如 agentvault),应用会在库内自动建表
 #
 # 用法:与 Release 中下载的 docker-compose.external-pg.yml 放在同一目录,
-#   在 .env 中填写已有库的连接信息,然后
+#   在 .env 中填写已有库的连接信息(变量清单见同目录的 .env.example),然后
 #   docker compose -f docker-compose.external-pg.yml up -d
 #
-# .env 示例:
+# .env 需填的关键项:
 #   KNOWLEDGE_DIR=/srv/knowledge
 #   AKM_DB_HOST=192.168.1.100          # 已有 PostgreSQL 地址(容器需能访问)
 #   AKM_DB_PORT=5432
@@ -30,9 +30,10 @@
 services:
   akm-hub:
     image: ghcr.io/wangboy91/akm-hub:${AKM_HUB_VERSION:-latest}
-    container_name: akm-hub
+    container_name: ${AKM_HUB_CONTAINER_NAME:-akm-hub}
     ports:
-      - "18000:8000"
+      # 宿主机端口可通过 AKM_HUB_PORT 调整(容器内固定 8000)
+      - "${AKM_HUB_PORT:-18000}:8000"
     volumes:
       # 本地知识库目录(只读挂载,修改为你的实际路径或在 .env 中设置 KNOWLEDGE_DIR)
       - ${KNOWLEDGE_DIR:-./knowledge}:/knowledge:ro

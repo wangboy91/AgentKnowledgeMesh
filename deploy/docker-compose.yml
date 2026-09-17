@@ -5,19 +5,21 @@
 #    需要完整功能(含语义检索)请用随 Release 分发的 docker-compose.pg.yml。
 #
 # 用法:与 Release 中下载的 docker-compose.yml 放在同一目录,
-#   可选创建 .env 设置 KNOWLEDGE_DIR / AKM_ADMIN_USERNAME / AKM_ADMIN_PASSWORD
+#   可选创建 .env 覆盖默认值(变量清单与说明见同目录的 .env.example)
 #   然后 docker compose up -d
 #
 # 说明:
 # - Release 分发版会将 ${AKM_HUB_VERSION:-latest} 替换为具体版本 tag(可复现部署);
 #   手动从仓库取用时默认 latest。
+# - 所有可调项都走环境变量(见 deploy/.env.example),改配置不用动本文件。
 
 services:
   akm-hub:
     image: ghcr.io/wangboy91/akm-hub:${AKM_HUB_VERSION:-latest}
-    container_name: akm-hub
+    container_name: ${AKM_HUB_CONTAINER_NAME:-akm-hub}
     ports:
-      - "18000:8000"
+      # 宿主机端口可通过 AKM_HUB_PORT 调整(容器内固定 8000)
+      - "${AKM_HUB_PORT:-18000}:8000"
     volumes:
       # 本地知识库目录(只读挂载,修改为你的实际路径或在 .env 中设置 KNOWLEDGE_DIR)
       - ${KNOWLEDGE_DIR:-./knowledge}:/knowledge:ro

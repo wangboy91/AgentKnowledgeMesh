@@ -4,15 +4,19 @@
 # 支持语义检索/自动向量化。需要 RAG 功能请用本文件部署。
 #
 # 用法:与 Release 中下载的 docker-compose.pg.yml 放在同一目录,
-#   可选创建 .env 设置 KNOWLEDGE_DIR / AKM_ADMIN_USERNAME / AKM_ADMIN_PASSWORD / POSTGRES_PASSWORD
+#   可选创建 .env 覆盖默认值(变量清单与说明见同目录的 .env.example)
 #   然后 docker compose -f docker-compose.pg.yml up -d
+#
+# 说明:所有可调项都走环境变量(见 deploy/.env.example),改配置不用动本文件;
+#   库名/账号(AKM_DB_NAME / AKM_DB_USER)同时作用于 akm-hub 与 pgvector 容器,不会漂移。
 
 services:
   akm-hub:
     image: ghcr.io/wangboy91/akm-hub:${AKM_HUB_VERSION:-latest}
-    container_name: akm-hub
+    container_name: ${AKM_HUB_CONTAINER_NAME:-akm-hub}
     ports:
-      - "18000:8000"
+      # 宿主机端口可通过 AKM_HUB_PORT 调整(容器内固定 8000)
+      - "${AKM_HUB_PORT:-18000}:8000"
     volumes:
       # 本地知识库目录(只读挂载,修改为你的实际路径或在 .env 中设置 KNOWLEDGE_DIR)
       - ${KNOWLEDGE_DIR:-./knowledge}:/knowledge:ro
@@ -22,10 +26,11 @@ services:
     environment:
       - AKM_KNOWLEDGE_ROOTS=/knowledge
       - AKM_DB_TYPE=postgres
+      # 容器内访问同 compose 的 postgres 服务,主机名固定为服务名、端口固定 5432
       - AKM_DB_HOST=postgres
       - AKM_DB_PORT=5432
-      - AKM_DB_NAME=agentvault
-      - AKM_DB_USER=postgres
+      - AKM_DB_NAME=${AKM_DB_NAME:-agentvault}
+      - AKM_DB_USER=${AKM_DB_USER:-postgres}
       - AKM_DB_PASSWORD=${POSTGRES_PASSWORD:-agentvault}
       # 向量嵌入:默认走火山引擎 Ark(代码默认即 ark),API Key 由部署方
       # 在本目录 .env 中提供(绝不打进镜像);不配置时语义检索报
@@ -44,16 +49,17 @@ services:
 
   # pgvector 官方镜像(内置 vector 扩展,普通 postgres 镜像没有,RAG 必需)
   postgres:
-    image: pgvector/pgvector:pg18
-    container_name: akm-postgres
+    image: pgvector/pgvector:${AKM_PGVECTOR_TAG:-pg18}
+    container_name: ${AKM_POSTGRES_CONTAINER_NAME:-akm-postgres}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     environment:
-      - POSTGRES_DB=agentvault
-      - POSTGRES_USER=postgres
+      # 与 akm-hub 侧的 AKM_DB_* 同源,避免两处配置漂移
+      - POSTGRES_DB=${AKM_DB_NAME:-agentvault}
+      - POSTGRES_USER=${AKM_DB_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-agentvault}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${AKM_DB_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5

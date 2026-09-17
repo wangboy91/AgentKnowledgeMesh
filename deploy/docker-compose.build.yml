@@ -19,6 +19,7 @@
 #                                       # 留空 = 与发布镜像一致(默认 ark HTTP 嵌入,不含 torch)
 #   其余变量同被叠加的基础 compose:KNOWLEDGE_DIR / AKM_ADMIN_USERNAME / AKM_ADMIN_PASSWORD
 #   / POSTGRES_PASSWORD / AKM_ARK_API_KEY / AKM_DB_HOST 等
+#   完整变量清单与说明见本仓 deploy/.env.example(可直接 cp 成 deploy/.env 使用)。
 #
 # 升级:拉取新源码后重复执行同一条 `up -d --build` 即重建镜像并重启容器;
 #   数据卷(akm-hub-data / postgres-data)不受影响。
