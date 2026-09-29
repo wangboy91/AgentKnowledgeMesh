@@ -17,6 +17,7 @@ import {
   CheckIcon,
   HourglassIcon,
   BanIcon,
+  MinusIcon,
 } from './Icon'
 
 interface Props {
@@ -37,6 +38,12 @@ function ragBadge(status: Document['rag_status']) {
       cls: 'badge--warning',
       titleKey: 'knowledge.ragPending',
     },
+    not_indexed: {
+      icon: <MinusIcon size={12} />,
+      label: 'RAG',
+      cls: 'badge--muted',
+      titleKey: 'knowledge.ragNotIndexed',
+    },
     excluded: {
       icon: <BanIcon size={12} />,
       label: 'RAG',
@@ -44,8 +51,8 @@ function ragBadge(status: Document['rag_status']) {
       titleKey: 'knowledge.ragExcluded',
     },
   } as const
-  const s = map[status ?? 'indexed']
-  return { ...s, status: status ?? 'indexed' }
+  const s = map[status ?? 'not_indexed']
+  return { ...s, status: status ?? 'not_indexed' }
 }
 
 export default function MarkdownViewer({ document }: Props) {

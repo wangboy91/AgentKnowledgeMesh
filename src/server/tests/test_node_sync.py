@@ -21,6 +21,7 @@ from app.db import Base, get_session
 from app.main import app
 from app.models.document import Document
 from app.models.node import Node
+from app.models.settings import AppSetting
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -72,6 +73,19 @@ async def client(db):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def auto_vectorization(db):
+    """本文件断言"上传即派发向量"的语义.
+
+    向量化默认关闭(见 test_vectorization_switch),故显式把设置置为
+    「向量化开启 + auto」;关闭态的上传行为由 test_vectorization_switch 覆盖。
+    """
+    async with db() as session:
+        session.add(AppSetting(key="vectorization_enabled", value="true"))
+        session.add(AppSetting(key="rag_sync_mode", value="auto"))
+        await session.commit()
 
 
 @pytest_asyncio.fixture

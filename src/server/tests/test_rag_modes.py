@@ -1,9 +1,11 @@
 """RAG 同步模式单测.
 
 覆盖:
-- 设置 API(默认 auto / admin 切换 / 切 auto 后台补齐非 excluded)
-- scan 模式联动(auto 派发向量 / manual 置 excluded 无向量操作)
-- 全量索引跳过 excluded;检索排除集(语义不可见)
+- 设置 API(默认 manual + 向量化关闭 / 非法值 / 部分更新 / 空更新体)
+- 模式切换语义(切 manual 不清向量;切 auto 仅在向量化开启时补齐)
+- scan 模式联动(仅「开启 + auto」派发向量,其余置 not_indexed 无向量操作)
+- 全量索引纳入 not_indexed/pending 并回写 indexed;跳过 excluded
+- 检索排除集(语义不可见)
 - 文档级勾选状态机(加入 pending→indexed / 移出 excluded+删向量)与批量
 - 列表 rag_status 携带与过滤
 """
@@ -17,25 +19,7 @@ from sqlalchemy.pool import StaticPool
 from app.db import Base, get_session
 from app.main import app
 from app.models.document import Document
-from app.models.node import Node
-
-
-class _FakeResult:
-    def all(self):
-        return []
-
-
-class _FakeSession:
-    async def execute(self, *a, **k):
-        return _FakeResult()
-
-
-class _FakeCtx:
-    async def __aenter__(self):
-        return _FakeSession()
-
-    async def __aexit__(self, *a):
-        return False
+from app.models.settings import AppSetting
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -50,6 +34,8 @@ def stub_vector_store(db, monkeypatch):
         "app.services.rag.vector_store.delete_document",
         lambda doc_id: calls["delete"].append(doc_id),
     )
+    # 开启向量化时的建表动作不得触达真实 PG
+    monkeypatch.setattr("app.api.settings._init_vector_store_sync", lambda: None)
     # sync._mark_indexed 的后台 DB 会话指向内存库,实现真实状态回写
     monkeypatch.setattr("app.db.async_session", lambda: db())
     return calls
@@ -113,6 +99,23 @@ async def viewer_headers(db):
     return {"Authorization": f"Bearer {token}"}
 
 
+async def _set_setting(session_factory, key, value):
+    """直接写 app_settings(绕过 API,避免建表副作用)."""
+    async with session_factory() as session:
+        row = await session.get(AppSetting, key)
+        if row is None:
+            session.add(AppSetting(key=key, value=value))
+        else:
+            row.value = value
+        await session.commit()
+
+
+async def _enable_vectorization(session_factory, mode="manual"):
+    """置为「向量化开启 + 指定模式」."""
+    await _set_setting(session_factory, "vectorization_enabled", "true")
+    await _set_setting(session_factory, "rag_sync_mode", mode)
+
+
 async def _seed_document(session_factory, path, content="content", rag_status="indexed"):
     async with session_factory() as session:
         session.add(Document(
@@ -132,16 +135,33 @@ async def _docs(session_factory, rag_status=None):
 
 # ---- 1.3 设置 API 与模式切换 ----
 
-async def test_settings_default_auto(client, admin_headers):
+async def test_settings_default_manual_and_vectorization_off(client, admin_headers):
     resp = await client.get("/api/settings", headers=admin_headers)
     assert resp.status_code == 200
-    assert resp.json() == {"rag_sync_mode": "auto"}
+    assert resp.json() == {"rag_sync_mode": "manual", "vectorization_enabled": False}
 
 
-async def test_settings_switch_manual_invalid_rejected(db, client, admin_headers):
+async def test_settings_partial_update_keeps_other_field(db, client, admin_headers):
+    """部分更新:只传 rag_sync_mode 不应影响 vectorization_enabled."""
+    resp = await client.put(
+        "/api/settings", json={"rag_sync_mode": "auto"}, headers=admin_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"rag_sync_mode": "auto", "vectorization_enabled": False}
+
+    resp = await client.put(
+        "/api/settings", json={"vectorization_enabled": True}, headers=admin_headers,
+    )
+    assert resp.json() == {"rag_sync_mode": "auto", "vectorization_enabled": True}
+
+
+async def test_settings_invalid_and_empty_rejected(db, client, admin_headers):
     resp = await client.put(
         "/api/settings", json={"rag_sync_mode": "bogus"}, headers=admin_headers,
     )
+    assert resp.status_code == 400
+
+    resp = await client.put("/api/settings", json={}, headers=admin_headers)
     assert resp.status_code == 400
 
 
@@ -157,18 +177,30 @@ async def test_settings_switch_manual_keeps_vectors(db, client, admin_headers, s
 
 
 async def test_settings_switch_back_auto_backfills(db, client, admin_headers, stub_vector_store):
-    await _seed_document(db, "a.md", content="AAA", rag_status="indexed")
-    await _seed_document(db, "skip.md", content="BBB", rag_status="excluded")
-
-    await client.put("/api/settings", json={"rag_sync_mode": "manual"}, headers=admin_headers)
-    stub_vector_store["add"].clear()
+    """切回 auto 且向量化开启 → 后台补齐非 excluded 文档."""
+    await _seed_document(db, "a.md", content="AAA", rag_status="not_indexed")
+    await _seed_document(db, "b.md", content="BBB", rag_status="pending")
+    await _seed_document(db, "skip.md", content="CCC", rag_status="excluded")
+    await _enable_vectorization(db, mode="manual")
 
     resp = await client.put("/api/settings", json={"rag_sync_mode": "auto"}, headers=admin_headers)
     assert resp.status_code == 200
 
     # 后台补齐:仅非 excluded 文档被向量化
     added_paths = {a["path"] for a in stub_vector_store["add"]}
-    assert added_paths == {"a.md"}
+    assert added_paths == {"a.md", "b.md"}
+    assert sorted(await _docs(db, rag_status="excluded")) == ["skip.md"]
+    # not_indexed 文档补齐后转 indexed
+    assert "a.md" in await _docs(db, rag_status="indexed")
+
+
+async def test_settings_switch_auto_without_vectorization_no_backfill(db, client, admin_headers, stub_vector_store):
+    """向量化关闭时切 auto 不补齐(仅落库)."""
+    await _seed_document(db, "a.md", content="AAA", rag_status="not_indexed")
+
+    resp = await client.put("/api/settings", json={"rag_sync_mode": "auto"}, headers=admin_headers)
+    assert resp.status_code == 200
+    assert stub_vector_store["add"] == []
 
 
 # ---- 2.3 scan 模式联动 ----
@@ -187,9 +219,9 @@ async def _scanned_docs():
 
 
 async def test_scan_auto_vectors_created(monkeypatch, db, client, admin_headers, stub_vector_store):
-    monkeypatch.setattr(
-        "app.services.scanner.scan_knowledge_root", _scanned_docs,
-    )
+    """向量化开启 + auto:扫描即向量化."""
+    await _enable_vectorization(db, mode="auto")
+    monkeypatch.setattr("app.services.scanner.scan_knowledge_root", _scanned_docs)
 
     resp = await client.post("/api/documents/scan", headers=admin_headers)
 
@@ -197,34 +229,43 @@ async def test_scan_auto_vectors_created(monkeypatch, db, client, admin_headers,
     assert resp.json()["created"] == 2
     added_paths = {a["path"] for a in stub_vector_store["add"]}
     assert added_paths == {"s1.md", "s2.md"}
+    assert sorted(await _docs(db, rag_status="indexed")) == ["s1.md", "s2.md"]
 
 
-async def test_scan_manual_excludes_no_vectors(monkeypatch, db, client, admin_headers, stub_vector_store):
-    await client.put("/api/settings", json={"rag_sync_mode": "manual"}, headers=admin_headers)
+async def test_scan_manual_no_vectors(monkeypatch, db, client, admin_headers, stub_vector_store):
+    """向量化开启 + manual:新文档 not_indexed,无向量操作."""
+    await _enable_vectorization(db, mode="manual")
     monkeypatch.setattr("app.services.scanner.scan_knowledge_root", _scanned_docs)
 
     resp = await client.post("/api/documents/scan", headers=admin_headers)
 
     assert resp.status_code == 200
     assert stub_vector_store["add"] == []
-    assert len(await _docs(db, rag_status="excluded")) == 2
+    assert len(await _docs(db, rag_status="not_indexed")) == 2
 
 
-# ---- 3.1 全量索引跳过 excluded / 检索排除集 ----
+# ---- 3.1 全量索引纳入 not_indexed / 跳过 excluded ----
 
-async def test_rag_index_skips_excluded(db, client, admin_headers, stub_vector_store):
-    await _seed_document(db, "keep.md", content="keep content")
+async def test_rag_index_includes_not_indexed_and_skips_excluded(db, client, admin_headers, stub_vector_store):
+    await _enable_vectorization(db, mode="manual")
+    await _seed_document(db, "keep.md", content="keep content", rag_status="not_indexed")
+    await _seed_document(db, "queued.md", content="queued content", rag_status="pending")
     await _seed_document(db, "skip.md", content="skip content", rag_status="excluded")
 
     resp = await client.post("/api/rag/index", headers=admin_headers)
 
     assert resp.status_code == 200
+    assert resp.json()["queued"] == 2
     added_paths = {a["path"] for a in stub_vector_store["add"]}
-    assert added_paths == {"keep.md"}
+    assert added_paths == {"keep.md", "queued.md"}
+    # 回写状态:not_indexed/pending → indexed
+    assert sorted(await _docs(db, rag_status="indexed")) == ["keep.md", "queued.md"]
+    assert await _docs(db, rag_status="excluded") == ["skip.md"]
 
 
 async def test_semantic_search_excludes_non_indexed(monkeypatch, db, client, admin_headers):
     """语义检索把 rag_status != indexed 的文档传入 excluded 排除集."""
+    await _enable_vectorization(db, mode="manual")
     await _seed_document(db, "excluded.md", content="secret", rag_status="excluded")
     await _seed_document(db, "pending.md", content="queued", rag_status="pending")
 
@@ -240,6 +281,7 @@ async def test_semantic_search_excludes_non_indexed(monkeypatch, db, client, adm
     resp = await client.get("/api/rag/search", params={"q": "secret"}, headers=admin_headers)
 
     assert resp.status_code == 200
+    assert resp.json()["mode"] == "semantic"
     # excluded + pending 均不可见
     assert captured["excluded"] is not None
     assert len(captured["excluded"]) == 2
@@ -248,7 +290,8 @@ async def test_semantic_search_excludes_non_indexed(monkeypatch, db, client, adm
 # ---- 3.2 文档级勾选状态机 / 批量 ----
 
 async def test_document_rag_enable_machine(db, client, admin_headers, stub_vector_store):
-    await _seed_document(db, "a.md", content="AAA", rag_status="excluded")
+    await _enable_vectorization(db, mode="manual")
+    await _seed_document(db, "a.md", content="AAA", rag_status="not_indexed")
 
     resp = await client.put(
         "/api/documents/1/rag", json={"enabled": True}, headers=admin_headers,
@@ -272,7 +315,8 @@ async def test_document_rag_disable_cleans_vectors(db, client, admin_headers, st
 
 
 async def test_document_rag_batch(db, client, admin_headers, stub_vector_store):
-    await _seed_document(db, "a.md", content="A", rag_status="excluded")
+    await _enable_vectorization(db, mode="manual")
+    await _seed_document(db, "a.md", content="A", rag_status="not_indexed")
     await _seed_document(db, "b.md", content="B", rag_status="excluded")
 
     resp = await client.post(
@@ -294,20 +338,20 @@ async def test_document_rag_viewer_forbidden(db, client, viewer_headers):
 
 async def test_list_documents_carries_rag_status(db, client, admin_headers):
     await _seed_document(db, "a.md", content="A", rag_status="indexed")
-    await _seed_document(db, "b.md", content="B", rag_status="excluded")
+    await _seed_document(db, "b.md", content="B", rag_status="not_indexed")
 
     resp = await client.get("/api/documents", headers=admin_headers)
 
     assert resp.status_code == 200
     by_path = {d["path"]: d for d in resp.json()}
     assert by_path["a.md"]["rag_status"] == "indexed"
-    assert by_path["b.md"]["rag_status"] == "excluded"
+    assert by_path["b.md"]["rag_status"] == "not_indexed"
 
 
 async def test_list_documents_filters_by_rag_status(db, client, admin_headers):
     await _seed_document(db, "a.md", content="A", rag_status="indexed")
-    await _seed_document(db, "b.md", content="B", rag_status="excluded")
+    await _seed_document(db, "b.md", content="B", rag_status="not_indexed")
 
-    resp = await client.get("/api/documents", params={"rag_status": "excluded"}, headers=admin_headers)
+    resp = await client.get("/api/documents", params={"rag_status": "not_indexed"}, headers=admin_headers)
 
     assert [d["path"] for d in resp.json()] == ["b.md"]

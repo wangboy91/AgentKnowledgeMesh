@@ -35,6 +35,13 @@ new change → (proposal / design / tasks / specs) → apply → verify → arch
 3. **verify**:实现与工件一致;`openspec` 校验 + 验证基线(§4)全绿
 4. **archive**:归档到 `openspec/changes/archive/`,delta specs 合入 `openspec/specs/`
 
+### archive 的两个硬约束(踩过坑)
+
+- **MODIFIED 块会「整体替换」基线 requirement**,必须把该 requirement 在 `openspec/specs/<capability>/spec.md` 里的**所有** `#### Scenario:` 抄进 delta,漏一个就被拒绝归档。改完 delta 先核对一遍再归档(逐个 requirement 比 baseline 与 delta 的 Scenario 名集合);`ADDED` 不受此约束,`REMOVED` 需写明 `**Reason**` 与 `**Migration**`
+- **对「尚不存在 capability」的 MODIFIED 会假性通过**(无基线可比),一旦该 capability 由别的变更先创建并归档,这个变更立刻失败 —— 所以新 capability 的 `ADDED` 要尽量先归档
+- 归档失败或中断可能残留 `openspec/changes/archive/.openspec-archive.lock`(内容为 `{"pid":...}`);确认该 pid 已不存在后删掉该文件再重跑,否则会一直报 "already being created"
+- 归档时 `openspec` 会提示未完成任务数;`-y` 可继续,但**未完成的项要在归档后的 tasks.md 里如实保留**,别为了归档好看而勾上
+
 ## 3. 完成回报
 
 - 完成后在任务/变更上下文中给出完成报告(改动清单、验证结果、遗留项)

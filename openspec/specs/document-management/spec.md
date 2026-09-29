@@ -58,11 +58,19 @@
 - **THEN** 系统返回 404，`detail` 为 "Document not found"
 
 ### Requirement: Document Creation
-系统 SHALL 提供 `POST /api/documents` 端点，接收 `path`、`title`、`content` 创建新文档。
+系统 SHALL 提供 `POST /api/documents` 端点，接收 `path`、`title`、`content` 创建新文档。**新文档的初始 `rag_status` SHALL 由「向量化总开关 + `rag_sync_mode`」决定:仅当总开关开启且模式为 `auto` 时置 `indexed` 并尽力同步向量索引,其余情况置 `not_indexed` 且不产生向量操作。**
 
 #### Scenario: 创建成功
 - **WHEN** 客户端提交不冲突路径的文档
-- **THEN** 系统计算 SHA256 哈希与字节大小并入库，尽力同步向量索引，返回完整文档记录
+- **THEN** 系统计算 SHA256 哈希与字节大小并入库，返回完整文档记录
+
+#### Scenario: 自动模式且向量化开启时同步向量
+- **WHEN** 向量化总开关开启、模式为 `auto`,文档创建成功
+- **THEN** 文档 `rag_status` 为 `indexed`,系统尽力同步其向量索引;失败不影响创建结果
+
+#### Scenario: 其余情况不入向量
+- **WHEN** 向量化总开关关闭,或模式为 `manual`
+- **THEN** 文档 `rag_status` 为 `not_indexed`,无任何向量操作
 
 #### Scenario: 路径冲突
 - **WHEN** 提交路径与现有文档重复
@@ -73,15 +81,19 @@
 - **THEN** 系统依次尝试从内容前 5 行中提取 `# ` 标题，否则使用路径文件名（去扩展名）
 
 ### Requirement: Document Update
-系统 SHALL 提供 `PUT /api/documents/{doc_id}` 端点，接收 `content` 更新文档正文。
+系统 SHALL 提供 `PUT /api/documents/{doc_id}` 端点，接收 `content` 更新文档正文。**更新后的 `rag_status` SHALL 按同一策略重设:仅「总开关开启 + auto」置 `indexed` 并尽力更新向量,其余置 `not_indexed`。**
 
 #### Scenario: 更新正文并重算元信息
 - **WHEN** 客户端提交新内容
 - **THEN** 系统更新内容、重算 SHA256 哈希与字节大小，并在内容前 5 行存在 `# ` 标题时更新标题
 
 #### Scenario: 更新后同步向量索引
-- **WHEN** 文档更新成功
-- **THEN** 系统尽力更新该文档的向量索引；向量更新失败不影响文档更新结果
+- **WHEN** 向量化总开关开启、模式为 `auto`,文档更新成功
+- **THEN** 文档 `rag_status` 为 `indexed`,系统尽力更新该文档的向量索引；向量更新失败不影响文档更新结果
+
+#### Scenario: 其余情况不入向量
+- **WHEN** 向量化总开关关闭,或模式为 `manual`,文档更新成功
+- **THEN** 文档 `rag_status` 为 `not_indexed`,无任何向量操作
 
 #### Scenario: 更新不存在的文档
 - **WHEN** 客户端请求更新不存在的文档 ID
@@ -102,14 +114,26 @@
 - **THEN** 系统返回 `{"name": <应用名>, "version": <版本号>, "status": "running"}`
 
 ### Requirement: Production SPA Serving
-系统 SHALL 在生产模式下（存在前端构建产物时）托管静态资源，并对非 API 路径提供 SPA 路由回退。
+系统 SHALL 在生产模式下（存在前端构建产物时）托管静态资源，并对非 API 路径提供 SPA 路由回退；返回的 `index.html` SHALL 携带当前部署前缀作为文档基址与运行时基址（见 `subpath-deployment` 能力），使同一份构建产物可在任意深度子路径下运行。
 
 #### Scenario: 前端路由回退
 - **WHEN** 请求的非 API 路径在静态目录中没有对应文件
 - **THEN** 系统返回 `index.html`，由前端路由接管
 
+#### Scenario: 回退页面携带部署基址
+- **WHEN** 部署配置了子路径前缀后请求任一非 API 路径（含 SPA 深链）
+- **THEN** 返回的 `index.html` 已注入指向该前缀的文档基址与运行时基址
+
+#### Scenario: 静态资源原样返回
+- **WHEN** 请求的是静态目录中真实存在的资源文件
+- **THEN** 该文件原样返回，不注入任何内容
+
+#### Scenario: 静态解析限定在静态目录内
+- **WHEN** 请求路径包含 `..` 等试图逃出静态目录的片段
+- **THEN** 系统不返回静态目录之外的文件（回退为 `index.html` 或 404），不得泄露源码等目录外内容
+
 ### Requirement: Document RAG Status Visibility
-文档列表与详情 SHALL 携带 `rag_status` 字段;文档列表 SHALL 支持按 `rag_status` 过滤(`GET /api/documents?rag_status=excluded` 等)。
+文档列表与详情 SHALL 携带 `rag_status` 字段(`not_indexed` / `pending` / `indexed` / `excluded`);文档列表 SHALL 支持按 `rag_status` 过滤(`GET /api/documents?rag_status=excluded` 等)。
 
 #### Scenario: 列表携带状态
 - **WHEN** 客户端调用 `GET /api/documents`
@@ -118,6 +142,10 @@
 #### Scenario: 按状态过滤
 - **WHEN** 客户端调用 `GET /api/documents?rag_status=excluded`
 - **THEN** 仅返回 `rag_status` 为 `excluded` 的文档
+
+#### Scenario: 未向量化与已排除可区分
+- **WHEN** 向量化关闭或模式为 `manual` 时新入库的文档,与用户显式"移出 RAG"的文档并存
+- **THEN** 前者 `rag_status` 为 `not_indexed`、后者为 `excluded`,过滤与展示均可区分
 
 ### Requirement: Document Path Lookup
 `GET /api/documents` SHALL 支持可选 `path` 查询参数,提供时仅返回该精确路径的文档(等值匹配,非模糊);可与 `node_id` / `rag_status` 组合。

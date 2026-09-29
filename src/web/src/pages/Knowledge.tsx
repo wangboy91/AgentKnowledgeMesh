@@ -88,7 +88,8 @@ export default function Knowledge() {
 
   async function handleToggleRag() {
     if (!document) return
-    const enable = document.rag_status === 'excluded'
+    // 已在向量库(indexed/pending)的点击即移出;未入向量(not_indexed/excluded)的点击即加入
+    const enable = document.rag_status !== 'indexed' && document.rag_status !== 'pending'
     try {
       const updated = await api.setDocumentRag(document.id, enable)
       setDocument(updated)
@@ -152,11 +153,11 @@ export default function Knowledge() {
               onClick={handleToggleRag}
               title={t('knowledge.ragToggleHint')}
             >
-              {document.rag_status === 'excluded'
-                ? t('knowledge.addToRag')
-                : document.rag_status === 'pending'
-                  ? t('knowledge.indexing')
-                  : t('knowledge.removeFromRag')}
+              {document.rag_status === 'pending'
+                ? t('knowledge.indexing')
+                : document.rag_status === 'indexed'
+                  ? t('knowledge.removeFromRag')
+                  : t('knowledge.addToRag')}
             </button>
             <button className="btn btn--primary" onClick={() => setEditing(true)}>
               {t('common.edit')}

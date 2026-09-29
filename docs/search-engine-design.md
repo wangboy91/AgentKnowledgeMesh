@@ -29,9 +29,12 @@
 
 - 来源：hub 本机扫描（`POST /documents/scan`）、节点推送（`PUT /nodes/{id}/documents`）、文档 API。
 - 向量化统一走 `services/rag/sync.py` 的后台通道 `sync_index_and_mark`：先入库再后台嵌入，失败仅告警不影响主流程。
-- `rag_status` 状态机：
-  - **auto 模式**：入库即 `indexed`（后台嵌入）；勾选"加入 RAG"→ `pending` → 嵌入后回写 `indexed`。
-  - **manual 模式**：入库即 `excluded`，不产生向量；"移出 RAG"→ `excluded` + 删向量。
+- 向量化**默认关闭**（`app_settings.vectorization_enabled=false`）：不初始化向量库、不产生嵌入调用，语义检索端点降级为关键词检索。
+- `rag_status` 四态与入库策略（`initial_rag_status`）：仅「总开关开启 + auto 模式」入库即 `indexed`（后台嵌入）；其余组合一律 `not_indexed`（尚未向量化）。
+  - **auto 模式**：入库即 `indexed`；勾选"加入 RAG"→ `pending` → 嵌入后回写 `indexed`。
+  - **manual 模式**（默认）：入库即 `not_indexed`，不产生向量；勾选加入 → `pending` → `indexed`。
+  - **用户显式移出** → `excluded` + 删向量；该状态粘性，不因文件内容变更被拉回。
+  - `POST /api/rag/index` 全量索引纳入除 `excluded` 外的全部有内容文档并回写 `indexed`。
 - 检索侧只召回 `indexed`（`_excluded_ids` 过滤 `rag_status != indexed`）。
 
 ### 2.2 Markdown 感知分块（`chunking.py`）

@@ -78,7 +78,9 @@ npm install
 npm run dev             # http://localhost:5173(已代理 /api → :8000)
 ```
 
-生产部署:`npm run build` 后把 `dist` 交由 Nginx/Docker 托管(Hub 静态托管目录统一见 docs/technical-design.md §8)。
+生产部署:`npm run build` 后由 Hub 托管 `dist`(镜像构建时自动拷到 `/app/static`,见 `src/Dockerfile`;静态托管细节见 docs/technical-design.md §8)。
+
+> ⚠️ **`index.html` 必须经 Hub 返回**:Hub 会在其中注入部署前缀(`<base href>` + `window.__AKM_BASE__`),前端据此确定路由 basename 与 API 基址。因此不要把 `dist` 单独交给 Nginx 托管 —— 反代只需把整个前缀转发给 Hub(见 [docs/deployment.md §1.9](docs/deployment.md))。前端产物本身用相对基路径构建,同一份产物可部署在任意深度子路径下,无需重新构建。
 
 ### 3)节点接入(另一台电脑)
 
@@ -114,7 +116,9 @@ docker compose -f deploy/docker-compose.node.yml up -d --build
 
 > 部署配置统一在 `deploy/`,两种方式配置完全一致,只有镜像来源不同(`KNOWLEDGE_DIR`、管理员账号、Ark 嵌入等变量见 [docs/deployment.md §1.3](docs/deployment.md));源码构建可用 `AKM_UV_EXTRAS=local-embedding` 装离线本地嵌入模型(见 [§1.8](docs/deployment.md))。节点默认是每台知识源机器一条命令安装的轻量客户端(见上方「节点接入」),不想装宿主命令时可改用上面的节点容器。
 
-> ⚠️ **RAG(语义检索/自动向量化)依赖 PostgreSQL + pgvector,SQLite 模式不支持**:SQLite 模式下语义检索接口与 MCP `mode=semantic` 返回错误、自动向量化不工作(启动日志有 `Vector DB init failed` 警告,属预期);关键词检索与文档同步不受影响。需要 RAG 请用 PostgreSQL 模式。详见 [docs/deployment.md §1.2](docs/deployment.md)。
+> **要挂在前置路由的子路径下**(如 `https://xx.com/akm/`、`https://xx.com/akm-hub/`,任意层级)?设 `AKM_ROOT_PATH=/akm` 并在反代转发该前缀即可 —— 前缀叫什么、多少层都不需要改镜像或重新构建前端。配置见 [docs/deployment.md §1.9](docs/deployment.md)。
+
+> ⚠️ **RAG(语义检索/向量化)依赖 PostgreSQL + pgvector,SQLite 模式不支持**:SQLite 模式下语义检索接口与 MCP `mode=semantic` 降级为关键词检索、向量化无法开启(设置页开启时提示向量库初始化失败);关键词检索与文档同步不受影响。需要 RAG 请用 PostgreSQL 模式。另:向量化**默认关闭**,需在设置页开启。详见 [docs/deployment.md §1.2](docs/deployment.md)。
 
 正式部署(拉取 GHCR 发布镜像 + 各机器一键安装 akm-node)见 **[docs/deployment.md](docs/deployment.md)**。
 
@@ -122,7 +126,8 @@ docker compose -f deploy/docker-compose.node.yml up -d --build
 
 - **浏览知识库**:Web 首页看统计;知识库页三栏布局(左选节点 → 中文件树 → 右渲染),搜索命中自动展开到对应文档,展开状态按节点记忆
 - **搜索**:顶栏实时搜索 = 关键词检索;语义检索走 `/api/rag/search`(或界面检索入口)
-- **文档进 RAG**:默认 auto 模式,节点文档与本地扫描的文档自动进入向量库;设置页可切 manual(新文档默认 excluded,仅手动勾选参与语义检索,文档树中 ⛔ 徽标可点击单篇加入/移出,顶部+/-批量操作)。语义检索与关键词临界见设置页说明
+- **向量化(默认关闭)**:升级后向量化**默认不启用**——不初始化向量库、不产生任何嵌入调用,语义检索自动降级为关键词检索(关键词搜索始终可用)。需要语义检索时在**设置页开启「向量化」**(开启时先校验向量库连接,失败则保持关闭)
+- **文档进 RAG**:向量化开启后,由「RAG 同步模式」决定是否自动入库——`manual`(默认)= 新文档标记 `not_indexed`,需手动加入;`auto` = 新/变更文档自动向量化。手动入口:文档树中 ⛔/⊖ 徽标点击单篇加入/移出,顶部 +/- 批量操作,或「全量索引 RAG」一次性纳入所有未向量化文档(跳过已移出的)。语义检索与关键词临界见设置页说明
 - **AI 工具接入(MCP)**:推荐方式 —— 机器上装有节点时,智能体直接用本地节点做 MCP 入口(免配 Hub 地址与凭证;凭证只留节点本机):
 
 ```json

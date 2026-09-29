@@ -2,7 +2,9 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vault.svg" />
+    <!-- 站点图标走 vite 的 base 占位符:生产构建展开为相对路径(配合服务端注入的
+         <base href> 解析到部署前缀下),dev server 下展开为 `/vault.svg`。 -->
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%vault.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
     <title>AgentVault - Knowledge OS</title>
   </head>

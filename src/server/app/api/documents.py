@@ -41,7 +41,9 @@ class DocumentRagBatch(BaseModel):
 @router.get("")
 async def list_documents(
     node_id: str | None = Query(None, description="节点 ID 过滤(缺省全量;local 为 hub 本机目录)"),
-    rag_status: str | None = Query(None, description="按 RAG 状态过滤(indexed/pending/excluded)"),
+    rag_status: str | None = Query(
+        None, description="按 RAG 状态过滤(not_indexed/pending/indexed/excluded)"
+    ),
     path: str | None = Query(None, description="按 path 精确匹配(组合 node_id 可唯一定位;供 Knowledge 页解析 doc id;非模糊匹配)"),
     principal=Depends(require_auth("viewer", allow_node=True)),
     session: AsyncSession = Depends(get_session),
@@ -141,17 +143,27 @@ async def scan_documents(
     principal=Depends(require_auth("admin")),
     session: AsyncSession = Depends(get_session),
 ):
-    """触发扫描知识库目录(RAG 模式联动:auto 后台向量化 created/updated 并清除非现向量)."""
+    """触发扫描知识库目录(仅「向量化开启 + auto」时后台向量化 created/updated)."""
     from app.services.scanner import scan_knowledge_root
     from app.services.indexer import sync_documents
-    from app.services.rag.sync import get_rag_mode, sync_index_and_mark
+    from app.services.rag.sync import (
+        get_rag_mode,
+        get_vectorization_enabled,
+        sync_index_and_mark,
+    )
 
     scanned = await scan_knowledge_root()
     rag_mode = await get_rag_mode(session)
-    stats = await sync_documents(session, scanned, rag_mode=rag_mode)
+    vectorization_enabled = await get_vectorization_enabled(session)
+    stats = await sync_documents(
+        session,
+        scanned,
+        rag_mode=rag_mode,
+        vectorization_enabled=vectorization_enabled,
+    )
     vector_ops = stats.pop("vector_ops", {"upserts": [], "deleted_ids": []})
 
-    # auto 模式:返回统计后后台向量化(失败仅告警);manual 模式无任何向量操作
+    # 仅「总开关开启 + auto」产生向量载荷;其余情况新文档为 not_indexed 无向量操作
     if vector_ops["upserts"] or vector_ops["deleted_ids"]:
         background_tasks.add_task(
             sync_index_and_mark, vector_ops["upserts"], vector_ops["deleted_ids"]
@@ -188,15 +200,24 @@ async def update_document(
             doc.title = line[2:].strip()
             break
 
-    # 按 RAG 模式设定状态:auto 入向量/manual 排除
-    from app.services.rag.sync import get_rag_mode, sync_index_and_mark
+    # 按「向量化总开关 + RAG 模式」设定状态:仅二者同时满足才入向量
+    from app.services.rag.sync import (
+        get_rag_mode,
+        get_vectorization_enabled,
+        resolve_rag_status,
+        should_auto_index,
+        sync_index_and_mark,
+    )
 
     rag_mode = await get_rag_mode(session)
-    doc.rag_status = "indexed" if rag_mode == "auto" else "excluded"
+    vectorization_enabled = await get_vectorization_enabled(session)
+    doc.rag_status = resolve_rag_status(doc.rag_status, rag_mode, vectorization_enabled)
     await session.commit()
+    # 服务端生成列(created_at/updated_at)在写入后可能被过期,显式 refresh 才能安全序列化
+    await session.refresh(doc)
 
-    # 向量索引(auto:后台统一通道,失败仅告警不影响主流程;manual:无向量操作)
-    if rag_mode == "auto":
+    # 向量索引(仅「总开关开启 + auto」;后台统一通道,失败仅告警不影响主流程)
+    if should_auto_index(rag_mode, vectorization_enabled) and doc.rag_status != "excluded":
         background_tasks.add_task(sync_index_and_mark, [
             {
                 "doc_id": doc.id,
@@ -248,15 +269,24 @@ async def create_document(
     )
 
     session.add(doc)
-    # 按 RAG 模式设定状态:auto 入向量/manual 排除
-    from app.services.rag.sync import get_rag_mode, sync_index_and_mark
+    # 按「向量化总开关 + RAG 模式」设定状态:仅二者同时满足才入向量
+    from app.services.rag.sync import (
+        get_rag_mode,
+        get_vectorization_enabled,
+        resolve_rag_status,
+        should_auto_index,
+        sync_index_and_mark,
+    )
 
     rag_mode = await get_rag_mode(session)
-    doc.rag_status = "indexed" if rag_mode == "auto" else "excluded"
+    vectorization_enabled = await get_vectorization_enabled(session)
+    doc.rag_status = resolve_rag_status(doc.rag_status, rag_mode, vectorization_enabled)
     await session.commit()
+    # 服务端生成列(created_at/updated_at)在写入后可能被过期,显式 refresh 才能安全序列化
+    await session.refresh(doc)
 
-    # 向量索引(auto:后台统一通道,失败仅告警不影响主流程;manual:无向量操作)
-    if rag_mode == "auto":
+    # 向量索引(仅「总开关开启 + auto」;后台统一通道,失败仅告警不影响主流程)
+    if should_auto_index(rag_mode, vectorization_enabled) and doc.rag_status != "excluded":
         background_tasks.add_task(sync_index_and_mark, [
             {
                 "doc_id": doc.id,
@@ -295,8 +325,17 @@ async def set_document_rag(
     principal=Depends(require_auth("admin")),
     session: AsyncSession = Depends(get_session),
 ):
-    """加入/移出 RAG(admin).加入 → pending → 后台向量化 → indexed;移出 → excluded+删向量."""
-    from app.services.rag.sync import sync_index_and_mark
+    """加入/移出 RAG(admin).加入 → pending → 后台向量化 → indexed;移出 → excluded+删向量.
+
+    向量化总开关关闭时"加入"返回 409(无可向量化目标),"移出"仍放行(仅清理)。
+    """
+    from app.services.rag.sync import get_vectorization_enabled, sync_index_and_mark
+
+    if body.enabled and not await get_vectorization_enabled(session):
+        raise HTTPException(
+            status_code=409,
+            detail="向量化已关闭,请先在设置中开启向量化",
+        )
 
     doc = await session.get(Document, doc_id)
     if not doc:
@@ -326,8 +365,17 @@ async def batch_set_rag(
     principal=Depends(require_auth("admin")),
     session: AsyncSession = Depends(get_session),
 ):
-    """批量加入/移出 RAG(admin)."""
-    from app.services.rag.sync import sync_index_and_mark
+    """批量加入/移出 RAG(admin).
+
+    向量化总开关关闭时"加入"返回 409,"移出"仍放行(仅清理)。
+    """
+    from app.services.rag.sync import get_vectorization_enabled, sync_index_and_mark
+
+    if body.enabled and not await get_vectorization_enabled(session):
+        raise HTTPException(
+            status_code=409,
+            detail="向量化已关闭,请先在设置中开启向量化",
+        )
 
     result = await session.execute(
         select(Document).where(Document.id.in_(body.doc_ids))

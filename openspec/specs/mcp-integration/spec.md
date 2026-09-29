@@ -7,11 +7,15 @@
 ## Requirements
 
 ### Requirement: MCP Server Transports
-系统 SHALL 以 Model Context Protocol(MCP)Server 形式暴露知识库能力,支持三种接入形态:Hub SSE(`GET /api/mcp/sse`)、Hub stdio(`akm-hub --mcp`,本机信任)与**节点本地 stdio 代理**(`akm-node --mcp`,智能体拉起子进程,经节点凭证转发 Hub HTTP API)。三种形态 SHALL 提供同一套工具。
+系统 SHALL 以 Model Context Protocol(MCP)Server 形式暴露知识库能力,支持三种接入形态:Hub SSE(`GET /api/mcp/sse`)、Hub stdio(`akm-hub --mcp`,本机信任)与**节点本地 stdio 代理**(`akm-node --mcp`,智能体拉起子进程,经节点凭证转发 Hub HTTP API)。三种形态 SHALL 提供同一套工具。**SSE 形态 SHALL 向客户端通告实际可用的消息端点,并随部署前缀拼接。**
 
 #### Scenario: SSE 传输连接
 - **WHEN** MCP 客户端(Claude Code、Cursor 等)连接 `GET /api/mcp/sse`
 - **THEN** 系统建立 Server-Sent Events 长连接,客户端请求经 `POST /api/mcp/messages` 送达,服务器推送经 SSE 流返回
+
+#### Scenario: SSE 通告的消息端点可直接回发
+- **WHEN** MCP 客户端按 SSE 流首帧通告的 endpoint 回发消息
+- **THEN** 该地址即真实路由(根路径部署为 `/api/mcp/messages`;配置部署前缀时为 `{前缀}/api/mcp/messages`),请求被受理(202)而非 404
 
 #### Scenario: stdio 传输
 - **WHEN** 以 stdio 模式启动 Hub 的 MCP Server
@@ -26,7 +30,7 @@
 - **THEN** 进程输出引导信息"请先执行 akm-node login"并以非零码退出
 
 ### Requirement: Search Documents Tool
-MCP Server SHALL 提供 `search_documents` 工具，参数为必填 `query` 与可选 `limit`（默认 5）。
+MCP Server SHALL 提供 `search_documents` 工具，参数为必填 `query` 与可选 `mode`(`keyword` 默认 / `semantic`)、`limit`（默认 5）。**`mode=semantic` 且向量化总开关关闭时,系统 SHALL 降级为关键词检索并在结果文本中明示降级原因,而非报错。**
 
 #### Scenario: 搜索命中
 - **WHEN** Agent 调用 `search_documents` 且关键词命中标题、路径或正文
@@ -35,6 +39,14 @@ MCP Server SHALL 提供 `search_documents` 工具，参数为必填 `query` 与�
 #### Scenario: 搜索无结果
 - **WHEN** 关键词无任何命中
 - **THEN** 工具返回 "未找到与 '<关键词>' 相关的文档。"
+
+#### Scenario: 语义模式且向量化开启
+- **WHEN** Agent 调用 `search_documents` 且 `mode=semantic`、向量化总开关开启
+- **THEN** 工具执行混合向量检索,仅召回 `rag_status` 为 `indexed` 的文档
+
+#### Scenario: 语义模式在向量化关闭时降级
+- **WHEN** Agent 调用 `search_documents` 且 `mode=semantic`,但向量化总开关关闭
+- **THEN** 工具改用关键词检索返回结果,并在文本首行标注"向量化未开启,已降级为关键词检索",不返回错误
 
 ### Requirement: Get Document Tool
 MCP Server SHALL 提供 `get_document` 工具，参数为必填 `document_id`。

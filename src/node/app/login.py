@@ -110,6 +110,9 @@ def prompt_and_exchange(default_hub_api_url: str) -> tuple[dict, str]:
     print("=" * 50)
     print("🔐 AgentKnowledgeMesh 节点登录")
     print("=" * 50)
+    print("提示:Hub 挂在反向代理子路径下时,地址要带上前缀")
+    print("      例:https://xx.com/akm/api(WS 地址会自动推导为 wss://xx.com/akm/ws)")
+    print()
 
     hub_api_url = input(f"Hub API 地址 [{default_hub_api_url}]: ").strip() or default_hub_api_url
     username = input("管理员用户名: ").strip()

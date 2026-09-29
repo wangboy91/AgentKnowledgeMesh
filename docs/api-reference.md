@@ -2,6 +2,8 @@
 
 > 运行中的完整接口清单以 `http://localhost:8000/docs`(FastAPI Swagger)为准;本文按领域归档要点。标注 🆕 的是已规划待实现接口(见 [technical-design.md](technical-design.md)),已实现的不再标注。
 
+> **子路径部署**:服务挂在反向代理前缀下时(如 `https://xx.com/akm/`),下表所有路径都要加上前缀 —— `/api/health` → `/akm/api/health`,`/ws` → `/akm/ws`,以此类推,前缀由 `AKM_ROOT_PATH` 决定(任意层级)。Swagger 的 `servers` 也会自动带上该前缀。配置方式见 [deployment.md §1.9](deployment.md)。
+
 ## 1. 鉴权
 
 | 方法 | 路径 | 说明 | 权限 |
@@ -33,13 +35,17 @@
 | --- | --- | --- |
 | GET | `/api/search?q=` | 关键词搜索 |
 | GET | `/api/context?q=` | Agent 上下文接口(需 JWT、API Token 或节点 token) |
-| GET | `/api/rag/search?q=` | 语义/混合检索 |
-| GET | `/api/rag/context?q=` | RAG 上下文 |
-| POST | `/api/rag/index` | 全量重建向量索引(admin) |
-| GET | `/api/rag/stats` | 向量库统计 |
-| GET/PUT | `/api/settings` 🆕 | 应用设置(含 `rag_sync_mode`) |
-| PUT | `/api/documents/:id/rag` 🆕 | 单篇加入/移出 RAG |
-| POST | `/api/documents/rag/batch` 🆕 | 批量加入/移出 RAG |
+| GET | `/api/rag/search?q=` | 语义/混合检索(🆕 向量化关闭时降级为关键词,响应 `mode` 为 `keyword`) |
+| GET | `/api/rag/context?q=` | RAG 上下文(🆕 同上降级) |
+| POST | `/api/rag/index` | 全量向量化所有非 `excluded` 文档(admin;🆕 后台派发,响应 `{message, queued}`;向量化关闭时 409) |
+| GET | `/api/rag/stats` | 向量库统计(🆕 含 `vectorization_enabled`;关闭时不连向量库) |
+| GET/PUT | `/api/settings` 🆕 | 应用设置(`rag_sync_mode` 默认 `manual` / `vectorization_enabled` 默认 `false`;PUT 支持部分更新) |
+| PUT | `/api/documents/:id/rag` 🆕 | 单篇加入/移出 RAG(🆕 加入方向在向量化关闭时 409,移出仍放行) |
+| POST | `/api/documents/rag/batch` 🆕 | 批量加入/移出 RAG(同上) |
+
+> **向量化总开关**(`vectorization_enabled`,默认关闭):关闭时不初始化向量库、不产生嵌入调用,`/api/rag/search` 与 `/api/rag/context` 降级为关键词检索;开启需在 `PUT /api/settings` 中显式置 `true`(服务端先初始化向量库,失败返回 500 且保持关闭)。
+>
+> **`rag_status` 四态**:`not_indexed`(尚未向量化,默认)/ `pending`(排队中)/ `indexed`(已入向量库,可被语义检索召回)/ `excluded`(用户显式移出,全量索引与检索均跳过)。仅「向量化开启 + `rag_sync_mode=auto`」时新/变更文档自动置 `indexed`。
 
 ## 4. 节点
 

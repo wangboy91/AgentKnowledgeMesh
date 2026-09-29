@@ -36,9 +36,10 @@ class Document(Base):
     size: Mapped[int] = mapped_column(Integer, nullable=False)
     tags: Mapped[str] = mapped_column(Text, default="[]")  # JSON array as string
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    # RAG 状态(RAG 同步模式):indexed(已入向量库) / pending(排队中) / excluded(不参与语义检索)
+    # RAG 状态(见 vector-search 规范):not_indexed(尚未向量化,默认态) /
+    # pending(排队中) / indexed(已入向量库) / excluded(用户显式移出)
     rag_status: Mapped[str] = mapped_column(
-        String(16), default="indexed", nullable=False, index=True
+        String(16), default="not_indexed", nullable=False, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

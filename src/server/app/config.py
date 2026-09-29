@@ -2,12 +2,31 @@
 
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 # 项目根目录（src/server，即 app 包的父目录）
 # 所有相对路径均锚定到此目录，与运行时 CWD 无关
 BASE_DIR = Path(__file__).parent.parent
+
+
+def normalize_root_path(raw: str) -> str:
+    """把部署前缀归一化为「前导斜杠、无尾斜杠」的形式.
+
+    根路径部署统一用空串表示(而非 "/"),便于各处 `if root_path:` 判断。
+
+    >>> normalize_root_path("akm/"), normalize_root_path("/"), normalize_root_path("")
+    ('/akm', '', '')
+    """
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    value = value.rstrip("/")
+    if not value:
+        return ""
+    if not value.startswith("/"):
+        value = "/" + value
+    return value
 
 
 class Settings(BaseSettings):
@@ -16,6 +35,11 @@ class Settings(BaseSettings):
     # 服务配置
     app_name: str = Field(
         "AgentKnowledgeMesh",
+    )
+    # 部署前缀(subpath-deployment):服务挂在反向代理的子路径下时填写,如 "/akm"、"/tools/kb";
+    # 留空 = 部署在域名根路径(默认,行为与不配置时一致)。支持任意深度。
+    root_path: str = Field(
+        "",
     )
     # 鉴权配置(account-auth)
     secret_key: str = Field(
@@ -158,6 +182,12 @@ class Settings(BaseSettings):
         "env_prefix": "AKM_",
         "env_file": str(BASE_DIR / ".env"),
     }
+
+    @field_validator("root_path", mode="after")
+    @classmethod
+    def _normalize_root_path(cls, value: str) -> str:
+        """容错用户输入:补前导斜杠、去尾斜杠,"/" 归一为空串."""
+        return normalize_root_path(value)
 
     @property
     def db_url(self) -> str:

@@ -32,7 +32,8 @@ export default function Settings() {
   const [name, setName] = useState('')
   const [role, setRole] = useState<'admin' | 'viewer'>('viewer')
   const [issued, setIssued] = useState<IssuedSecret | null>(null)
-  const [ragMode, setRagModeState] = useState<'auto' | 'manual'>('auto')
+  const [ragMode, setRagModeState] = useState<'auto' | 'manual'>('manual')
+  const [vectorEnabled, setVectorEnabled] = useState(false)
   const [showRevoked, setShowRevoked] = useState(false)
   const admin = isAdmin()
 
@@ -49,9 +50,11 @@ export default function Settings() {
     }
   }, [reportError])
 
-  const refreshRagMode = useCallback(async () => {
+  const refreshSettings = useCallback(async () => {
     try {
-      setRagModeState((await api.getSettings()).rag_sync_mode)
+      const s = await api.getSettings()
+      setRagModeState(s.rag_sync_mode)
+      setVectorEnabled(s.vectorization_enabled)
     } catch {
       /* 读取失败保持默认;开关操作会重试 */
     }
@@ -60,9 +63,9 @@ export default function Settings() {
   useEffect(() => {
     if (admin) {
       refresh()
-      refreshRagMode()
+      refreshSettings()
     }
-  }, [admin, refresh, refreshRagMode])
+  }, [admin, refresh, refreshSettings])
 
   async function handleCreate() {
     if (!admin || !name.trim()) return
@@ -126,6 +129,18 @@ export default function Settings() {
     }
   }
 
+  async function handleVectorization(enabled: boolean) {
+    if (!admin) return
+    if (enabled && !confirm(t('settings.vectorConfirmEnable'))) return
+    try {
+      const res = await api.setVectorization(enabled)
+      setVectorEnabled(res.vectorization_enabled)
+      toast.success(enabled ? t('settings.vectorOnToast') : t('settings.vectorOffToast'))
+    } catch (err) {
+      reportError(err)
+    }
+  }
+
   async function copyPlaintext() {
     if (!issued) return
     try {
@@ -155,10 +170,36 @@ export default function Settings() {
       {/* 用户管理 */}
       <UserManagement />
 
+      {/* 向量化总开关 */}
+      <section className="settings-section">
+        <h3>{t('settings.vectorTitle')}</h3>
+        <p>{t('settings.vectorDesc')}</p>
+        <div className="settings-row">
+          <button
+            className={`btn ${vectorEnabled ? 'btn--primary' : ''}`}
+            onClick={() => handleVectorization(true)}
+            disabled={vectorEnabled}
+          >
+            {vectorEnabled && <CheckIcon size={14} />}
+            <span>{t('settings.vectorOn')}</span>
+          </button>
+          <button
+            className={`btn ${!vectorEnabled ? 'btn--primary' : ''}`}
+            onClick={() => handleVectorization(false)}
+            disabled={!vectorEnabled}
+          >
+            {!vectorEnabled && <CheckIcon size={14} />}
+            <span>{t('settings.vectorOff')}</span>
+          </button>
+        </div>
+        {!vectorEnabled && <p className="muted">{t('settings.vectorOffHint')}</p>}
+      </section>
+
       {/* RAG Mode */}
       <section className="settings-section">
         <h3>{t('settings.ragTitle')}</h3>
         <p>{t('settings.ragDesc')}</p>
+        {!vectorEnabled && <p className="muted">{t('settings.ragDisabledHint')}</p>}
         <div className="settings-row">
           <button
             className={`btn ${ragMode === 'auto' ? 'btn--primary' : ''}`}

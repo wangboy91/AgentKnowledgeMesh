@@ -115,26 +115,36 @@ async def _search_documents(query: str, limit: int, mode: str = "keyword") -> ty
     """搜索文档.
 
     keyword:文档表 LIKE 检索;semantic:dense+sparse 混合向量检索(质量由 Hub 保证)。
+    向量化总开关关闭时 semantic 降级为 keyword,并在输出首行标注降级原因。
     """
+    degraded_note = ""
     if mode == "semantic":
         from app.services.rag import vector_store
+        from app.services.rag.sync import get_vectorization_enabled
 
-        try:
-            # 仅召回 rag_status 为 indexed 的文档(与 /api/rag/search 一致)
-            async with async_session() as session:
-                stmt = select(Document.id).where(Document.rag_status != "indexed")
-                excluded = {row[0] for row in (await session.execute(stmt)).all()}
-            results = vector_store.search_hybrid(
-                query=query, limit=limit, excluded_doc_ids=excluded,
-            )
-        except Exception as e:
+        async with async_session() as session:
+            vectorization_enabled = await get_vectorization_enabled(session)
+
+        if vectorization_enabled:
+            try:
+                # 仅召回 rag_status 为 indexed 的文档(与 /api/rag/search 一致)
+                async with async_session() as session:
+                    stmt = select(Document.id).where(Document.rag_status != "indexed")
+                    excluded = {row[0] for row in (await session.execute(stmt)).all()}
+                results = vector_store.search_hybrid(
+                    query=query, limit=limit, excluded_doc_ids=excluded,
+                )
+            except Exception as e:
+                return types.CallToolResult(content=[
+                    types.TextContent(type="text", text=f"语义检索失败:{e}")
+                ], isError=True)
+            text = format_semantic_search(query, results)
             return types.CallToolResult(content=[
-                types.TextContent(type="text", text=f"语义检索失败:{e}")
-            ], isError=True)
-        text = format_semantic_search(query, results)
-        return types.CallToolResult(content=[
-            types.TextContent(type="text", text=text)
-        ])
+                types.TextContent(type="text", text=text)
+            ])
+
+        # 关闭时降级:继续走下面的关键词分支,输出前加提示
+        degraded_note = "（向量化未开启，已降级为关键词检索）\n"
 
     pattern = f"%{query}%"
 
@@ -160,13 +170,13 @@ async def _search_documents(query: str, limit: int, mode: str = "keyword") -> ty
 
     if not documents:
         return types.CallToolResult(content=[
-            types.TextContent(type="text", text=f"未找到与 '{query}' 相关的文档。")
+            types.TextContent(type="text", text=f"{degraded_note}未找到与 '{query}' 相关的文档。")
         ])
 
     # 格式化逻辑单源共享(与节点本地代理输出一致)
     docs = [doc.to_dict(include_content=False) for doc in documents]
     return types.CallToolResult(content=[
-        types.TextContent(type="text", text=format_search_results(query, docs))
+        types.TextContent(type="text", text=degraded_note + format_search_results(query, docs))
     ])
 
 

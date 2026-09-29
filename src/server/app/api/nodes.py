@@ -16,7 +16,14 @@ from app.db import get_session
 from app.models.node import Node
 from app.models.document import Document
 from app.services.auth import require_auth
-from app.services.rag.sync import get_rag_mode, sync_index_and_mark
+from app.services.rag.sync import (
+    get_rag_mode,
+    get_vectorization_enabled,
+    initial_rag_status,
+    resolve_rag_status,
+    should_auto_index,
+    sync_index_and_mark,
+)
 from app.services.websocket import manager
 
 logger = logging.getLogger(__name__)
@@ -158,6 +165,7 @@ async def _sync_node_documents(
     deletions: list[str],
     implicit_delete: bool,
     rag_mode: str,
+    vectorization_enabled: bool,
 ) -> tuple[dict, dict]:
     """按 (node_id, path) 作用域增量同步文档.
 
@@ -205,7 +213,7 @@ async def _sync_node_documents(
                 hash=doc.hash,
                 size=doc.size,
                 content=doc.content,
-                rag_status="indexed" if rag_mode == "auto" else "excluded",
+                rag_status=initial_rag_status(rag_mode, vectorization_enabled),
             )
             session.add(new_doc)
             created_this_batch.add(path)
@@ -216,7 +224,10 @@ async def _sync_node_documents(
             old_doc.hash = doc.hash
             old_doc.size = doc.size
             old_doc.content = doc.content
-            old_doc.rag_status = "indexed" if rag_mode == "auto" else "excluded"
+            # 用户显式 excluded 的文档不被内容变更拉回
+            old_doc.rag_status = resolve_rag_status(
+                old_doc.rag_status, rag_mode, vectorization_enabled
+            )
             stats["updated"] += 1
             changed.append(old_doc)
 
@@ -248,9 +259,11 @@ async def _sync_node_documents(
             "node_id": d.node_id,
         }
         for d in changed
+        if d.rag_status != "excluded"
     ]
-    # manual 模式下 new/updated 文档不入向量(rag_status=excluded),仅维持删除清理
-    if rag_mode == "manual":
+    # 仅「总开关开启 + auto」产生向量载荷;其余情况 new/updated 文档为
+    # not_indexed,仅维持删除清理
+    if not should_auto_index(rag_mode, vectorization_enabled):
         upserts = []
     await session.commit()
     return stats, {"upserts": upserts, "deleted_ids": deleted_ids}
@@ -289,8 +302,15 @@ async def put_node_documents(
     # 以"请求是否携带 deletions 字段"区分新旧协议(旧版节点不发该字段)
     implicit_delete = "deletions" not in payload.model_fields_set
     rag_mode = await get_rag_mode(session)
+    vectorization_enabled = await get_vectorization_enabled(session)
     stats, vector_ops = await _sync_node_documents(
-        session, node_id, payload.documents, payload.deletions, implicit_delete, rag_mode,
+        session,
+        node_id,
+        payload.documents,
+        payload.deletions,
+        implicit_delete,
+        rag_mode,
+        vectorization_enabled,
     )
 
     # commit 成功后才派发后台向量维护(统一通道,嵌入不阻塞响应)

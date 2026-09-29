@@ -27,13 +27,15 @@
 
 ### 1.2 选择数据库模式(决定是否有 RAG)
 
-| 模式 | compose 文件 | RAG(语义检索/自动向量化) | 适用 |
+| 模式 | compose 文件 | RAG(语义检索/向量化) | 适用 |
 | --- | --- | --- | --- |
 | **SQLite** | `docker-compose.yml` | ❌ **不支持** | 只要关键词检索、零依赖快速起步 |
 | **PostgreSQL** | `docker-compose.pg.yml` | ✅ 完整支持 | 需要语义检索(推荐,自带 pgvector 容器) |
 | **外接已有 PostgreSQL** | `docker-compose.external-pg.yml` | ✅ 完整支持(前提见下) | 已有装好 pgvector 的 PostgreSQL,复用不自建 |
 
-> ⚠️ **RAG 功能依赖 PostgreSQL + pgvector 向量库**。SQLite 模式下向量库不可用:语义检索接口(`/api/rag/search`、MCP `search_documents mode=semantic`)返回错误,自动向量化不工作;关键词检索、文档同步、MCP 的 keyword 模式不受影响。Hub 启动日志中会看到 `Vector DB init failed` 警告,属 SQLite 模式的预期行为。
+> ⚠️ **RAG 功能依赖 PostgreSQL + pgvector 向量库**。SQLite 模式下向量库不可用:语义检索接口(`/api/rag/search`、MCP `search_documents mode=semantic`)降级为关键词检索,设置页开启向量化时会因向量库初始化失败而保持关闭;关键词检索、文档同步、MCP 的 keyword 模式不受影响。
+>
+> ℹ️ **向量化默认关闭**(设置页「向量化」开关,持久化于 `app_settings`)。部署完成后需在 Web 设置页开启,语义检索才会走向量;关闭期间一切检索自动降级为关键词。需要新文档自动入库的部署,再把「RAG 同步模式」切为 `auto`(默认 `manual`)。
 
 两种模式除 compose 文件与数据库外完全一致,后续升级可从 SQLite 换到 PostgreSQL(用 `src/server/scripts/migrate_sqlite_to_pg.py` 迁移数据)。
 
@@ -63,6 +65,7 @@ docker compose -f docker-compose.external-pg.yml up -d  # 外接已有 PostgreSQ
 | `POSTGRES_PASSWORD` | `agentvault` | 仅自带 PG 模式;**生产必改** |
 | `AKM_DB_HOST` / `AKM_DB_PORT` / `AKM_DB_NAME` / `AKM_DB_USER` / `AKM_DB_PASSWORD` | — | 仅外接已有 PostgreSQL 模式;未填 `AKM_DB_HOST` / `AKM_DB_PASSWORD` 时 compose 直接报错,不会静默连错库 |
 | `AKM_ARK_API_KEY` | 空 | 需要 RAG 的模式必需(见 §1.5) |
+| `AKM_ROOT_PATH` | 空 | 部署在反向代理子路径下时的前缀(如 `/akm`);留空 = 域名根路径。见 **§1.9 子路径部署** |
 | `AKM_HUB_VERSION` | `latest` | 镜像 tag;Release 分发包已固定为版本号 |
 
 > 所有可调项都走环境变量,改配置不需要动 compose 文件本身。容器名(`AKM_HUB_CONTAINER_NAME` / `AKM_POSTGRES_CONTAINER_NAME`)、pgvector 镜像 tag(`AKM_PGVECTOR_TAG`)等同理。
@@ -154,6 +157,96 @@ docker compose -f deploy/docker-compose.pg.yml -f deploy/docker-compose.build.ym
 - **回滚** = 换回基础 compose 单独执行(`docker compose -f deploy/docker-compose.yml up -d`),即回到 GHCR 镜像;
 - 密钥仍只存在于部署目录 `.env`,经环境变量注入容器,不进镜像(同 §1.5)。
 
+### 1.9 子路径部署(前置反向代理)
+
+适用:服务不能独占域名根路径,要挂在网关的某个前缀下,例如 `https://xx.com/akm/`、`https://xx.com/akm-hub/`,甚至 `https://xx.com/internal/tools/akm/`。
+
+**前缀叫什么、有多少层都不需要改镜像或重新构建前端** —— 前端产物在运行期读取前缀(服务端渲染 `index.html` 时注入),同一份镜像可以部署在任意深度。
+
+#### 客户要配的只有三处
+
+**① Hub:声明前缀**
+
+```bash
+# deploy/.env
+AKM_ROOT_PATH=/akm          # 就填前缀本身,不带尾斜杠;根路径部署留空
+```
+
+```bash
+docker compose -f docker-compose.pg.yml up -d   # 重建容器生效
+```
+
+启动日志会打印生效值,便于核对:
+
+```
+🔗 Deploy root path: /akm (经反向代理子路径访问)
+```
+
+**② 反向代理:把前缀转发到 Hub**
+
+nginx —— 下面两种写法**都支持**,选一种:
+
+```nginx
+# 写法 A:保留前缀转发(proxy_pass 不带尾斜杠)
+location /akm/ {
+    proxy_pass http://127.0.0.1:18000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;      # WebSocket(节点通道)
+    proxy_set_header Connection "upgrade";
+}
+
+# 写法 B:剥离前缀转发(proxy_pass 带尾斜杠)
+location /akm/ {
+    proxy_pass http://127.0.0.1:18000/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+```
+
+Caddy —— 一行,自动保留前缀、自动处理 WebSocket 升级:
+
+```caddyfile
+xx.com {
+    reverse_proxy /akm/* 127.0.0.1:18000
+}
+```
+
+> ⚠️ **WebSocket 升级头不能少**:节点通道走 `/akm/ws`,缺少 `Upgrade` / `Connection` 转发时节点会反复重连。Caddy 默认已处理。
+>
+> ⚠️ **不要用 `sub_filter` 改写前端资源路径**:前缀是运行期注入的,反代只需转发。
+
+**③ 节点:地址带上前缀**
+
+```bash
+# 一键安装后交互登录,或直接改 ~/.akm-node/.env
+AKM_HUB_API_URL=https://xx.com/akm/api
+AKM_HUB_URL=wss://xx.com/akm/ws      # 由 API 地址自动推导,一般无需手填
+```
+
+容器方式(§2.4)同理,在 `deploy/.env` 里设这两个变量。
+
+#### 验证
+
+```bash
+BASE=https://xx.com/akm
+curl -s $BASE/api/health                     # {"status":"running",...}
+curl -sI $BASE/ | head -1                    # 200,HTML 里含 <base href="/akm/">
+curl -sI $BASE/knowledge | head -1           # 200,深链回退 index.html
+curl -sI $BASE/assets/<构建产物文件名>        # 200
+```
+
+浏览器打开 `https://xx.com/akm/`,登录后所有页面、接口、MCP 端点都自动在前缀下工作。
+
+#### 注意
+
+- **MCP 端点也带前缀**:`https://xx.com/akm/api/mcp/sse`(SSE 会通告 `https://xx.com/akm/api/mcp/messages`);
+- **静态资源必须经 Hub 提供**:前缀由 Hub 注入 `index.html` 的 `<base href>` 决定,因此不要绕开 Hub 直接用 nginx 托管 `dist/`(那样深链下相对资源会解析错)。若确实要分离静态托管,需自行在 index.html 里注入 `<base href="/akm/">` 与 `window.__AKM_BASE__ = "/akm/";`;
+- **任意层级同样成立**:把上面三处的 `/akm` 换成 `/a/b/c` 即可,无需其它改动;
+- **根路径部署行为不变**:`AKM_ROOT_PATH` 留空时与引入该能力前完全一致。
+
 ---
 
 ## 2. 安装 akm-node(每台知识源机器)
@@ -185,6 +278,8 @@ akm-node login
 ```
 
 交互输入:Hub API 地址(如 `http://<服务器IP>:8000/api`)、管理员用户名/密码。成功后凭证写入 `~/.akm-node/.env`(路径可用 `AKM_NODE_ENV_FILE` 覆盖),**进程不退出**,自动连接 Hub 完成注册并执行首次扫描同步,随后前台常驻;断开按 Ctrl+C。
+
+> Hub 部署在反向代理子路径下时,API 地址要带上前缀(如 `https://xx.com/akm/api`),WebSocket 地址会据此自动推导为 `wss://xx.com/akm/ws`。见 §1.9。
 
 之后再启动只需:
 
@@ -264,7 +359,7 @@ Claude Code 一条命令接入:
 claude mcp add agentknowledge -- akm-node --mcp
 ```
 
-远程/无节点机器的替代形态(Hub SSE / Hub stdio)见 [README.md](../README.md)「AI 工具接入(MCP)」。
+远程/无节点机器的替代形态(Hub SSE / Hub stdio)见 [README.md](../README.md)「AI 工具接入(MCP)」。Hub 若部署在子路径下,SSE 端点为 `https://xx.com/akm/api/mcp/sse`(SSE 会自行通告带前缀的消息端点,客户端无需额外配置)。
 
 ---
 
@@ -280,6 +375,8 @@ claude mcp add agentknowledge -- akm-node --mcp
 | 节点凭证失效(Web 端重置过 token) | 重新 `akm-node login`(运行中会主动询问是否现场重登) |
 | 想换知识库目录 | 改 `~/.akm-node/.env` 的 `AKM_KNOWLEDGE_ROOTS` 后重启节点 |
 | Hub 换了地址 | 重新 `akm-node login` 输入新地址(凭证会刷新) |
+| Hub 挂在反代子路径下(如 `https://xx.com/akm/`) | 三处都要带前缀:Hub 侧 `AKM_ROOT_PATH=/akm`、反代转发 `/akm/`、节点侧 `AKM_HUB_API_URL=https://xx.com/akm/api`。见 §1.9 |
+| 子路径下页面能开但接口 404 / 白屏 | 检查 `AKM_ROOT_PATH` 与反代前缀是否一致;反代缺 WebSocket 升级头时节点会反复重连(§1.9) |
 | 登录后终端一直占用、想退出 | `login` 成功即进入常驻运行(设计如此),按 Ctrl+C 退出;凭证已写入,之后 `akm-node` 可随时再启动 |
 
 ---

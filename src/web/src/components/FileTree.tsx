@@ -40,9 +40,10 @@ const RAG_STATUS: Record<
   string,
   { variant: 'success' | 'warning' | 'muted'; icon: React.ComponentType<any>; i18nKey: string }
 > = {
-  indexed:  { variant: 'success', icon: CheckIcon,    i18nKey: 'filetree.statusIndexed' },
-  pending:  { variant: 'warning', icon: HourglassIcon, i18nKey: 'filetree.statusPending' },
-  excluded: { variant: 'muted',   icon: BanIcon,      i18nKey: 'filetree.statusExcluded' },
+  indexed:     { variant: 'success', icon: CheckIcon,     i18nKey: 'filetree.statusIndexed' },
+  pending:     { variant: 'warning', icon: HourglassIcon, i18nKey: 'filetree.statusPending' },
+  not_indexed: { variant: 'muted',   icon: MinusIcon,     i18nKey: 'filetree.statusNotIndexed' },
+  excluded:    { variant: 'muted',   icon: BanIcon,       i18nKey: 'filetree.statusExcluded' },
 }
 
 type SelectMode = null | 'add' | 'remove'
@@ -277,8 +278,10 @@ export default function FileTree(props: Props) {
     if (docId === undefined || !path) return
     setBusy(true)
     try {
-      const toExclude = (node as any)._rag_status !== 'excluded'
-      await api.setDocumentRag(docId, toExclude)
+      // 已在向量库的点击即移出;未入向量(not_indexed/excluded)的点击即加入
+      const s = (node as any)._rag_status
+      const enable = s !== 'indexed' && s !== 'pending'
+      await api.setDocumentRag(docId, enable)
       const parent = path.split('/').slice(0, -1).join('/')
       await reloadDirs([parent])
       toast.success(t('filetree.ragUpdated'))
@@ -366,13 +369,15 @@ export default function FileTree(props: Props) {
 
   /**
    * 选中模式时,文件项是否可勾选:
-   * - add 模式:只能选 excluded
-   * - remove 模式:只能选 indexed/pending
+   * - add 模式:只能选尚未入向量的(not_indexed / excluded)
+   * - remove 模式:只能选已在向量库的(indexed / pending)
    */
   function canPick(ragStatus: string | undefined): boolean {
     if (!selectMode) return false
-    const s = ragStatus || 'indexed'
-    return selectMode === 'add' ? s === 'excluded' : s !== 'excluded'
+    const s = ragStatus || 'not_indexed'
+    return selectMode === 'add'
+      ? s === 'not_indexed' || s === 'excluded'
+      : s === 'indexed' || s === 'pending'
   }
 
   function renderNode(name: string, node: TreeNode | any, path = ''): React.ReactNode {
@@ -380,7 +385,7 @@ export default function FileTree(props: Props) {
 
     if ((node as any)._path) {
       const nodePath = (node as any)._path as string
-      const statusKey = (node as any)._rag_status || 'indexed'
+      const statusKey = (node as any)._rag_status || 'not_indexed'
       if (filter && statusKey !== filter) return null
       const status = RAG_STATUS[statusKey]
       const StatusIcon = status.icon
@@ -557,6 +562,7 @@ export default function FileTree(props: Props) {
             <option value="">{t('filetree.allStatus')}</option>
             <option value="indexed">{t('filetree.statusIndexed')}</option>
             <option value="pending">{t('filetree.statusPending')}</option>
+            <option value="not_indexed">{t('filetree.statusNotIndexed')}</option>
             <option value="excluded">{t('filetree.statusExcluded')}</option>
           </select>
           <button

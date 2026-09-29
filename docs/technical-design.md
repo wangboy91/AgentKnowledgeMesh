@@ -239,6 +239,8 @@ documents 新增列: rag_status TEXT  ("pending"|"indexed"|"excluded")
 | B. env 默认 static + 构建后拷贝 | Makefile 自动 `dist → static` | hub 目录自包含,多一步拷贝 |
 | C. 三级回退 | env > web/dist > static | 灵活但排障不直观 |
 
+> 注:`index.html` 现在由 Hub 在返回时注入部署前缀(`<base href>` + `window.__AKM_BASE__`,见 [deployment.md §1.9](deployment.md))。因此无论最终选哪个候选,站点**入口**都应由 Hub 返回,不要绕开 Hub 直接把 `dist` 交给 Nginx 托管 —— 那样深链下相对资源会解析错。
+
 ---
 
 ## 9. MCP / 智能体接入形态

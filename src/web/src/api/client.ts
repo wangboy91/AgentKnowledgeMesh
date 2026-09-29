@@ -3,7 +3,11 @@
  */
 
 import i18n from '../i18n'
-const BASE_URL = '/api'
+import { API_BASE } from '../runtime'
+
+// 带部署前缀的 API 基址:`/api`(根路径部署)或 `/akm/api`(子路径部署)。
+// 注意 fetch 的绝对路径不读 `<base>`,故必须显式拼前缀。
+const BASE_URL = API_BASE
 
 export interface Document {
   id: number
@@ -13,7 +17,7 @@ export interface Document {
   hash: string
   size: number
   tags: string[]
-  rag_status?: 'indexed' | 'pending' | 'excluded'
+  rag_status?: 'not_indexed' | 'indexed' | 'pending' | 'excluded'
   created_at: string
   updated_at: string
   content?: string
@@ -84,11 +88,16 @@ export interface RagContextResponse {
   documents: RagContextDoc[]
 }
 
-/** RAG 索引响应 */
+/** 应用设置(向量化总开关 + RAG 同步模式) */
+export interface SettingsResponse {
+  rag_sync_mode: 'auto' | 'manual'
+  vectorization_enabled: boolean
+}
+
+/** RAG 索引响应(后台派发:queued 为本次排队文档数) */
 export interface RagIndexResponse {
   message: string
-  indexed: number
-  total_chunks: number
+  queued: number
 }
 
 /** 向量存储统计 */
@@ -361,12 +370,17 @@ export const api = {
   },
 
   /** 设置全局 RAG 同步模式(auto/manual,admin) */
-  setRagMode(mode: 'auto' | 'manual'): Promise<{ rag_sync_mode: string }> {
+  setRagMode(mode: 'auto' | 'manual'): Promise<SettingsResponse> {
     return putJSONBody(`${BASE_URL}/settings`, { rag_sync_mode: mode })
   },
 
+  /** 设置向量化总开关(admin;开启时服务端先初始化向量库,失败返回 500) */
+  setVectorization(enabled: boolean): Promise<SettingsResponse> {
+    return putJSONBody(`${BASE_URL}/settings`, { vectorization_enabled: enabled })
+  },
+
   /** 读取全局设置 */
-  getSettings(): Promise<{ rag_sync_mode: 'auto' | 'manual' }> {
+  getSettings(): Promise<SettingsResponse> {
     return fetchJSON(`${BASE_URL}/settings`)
   },
 

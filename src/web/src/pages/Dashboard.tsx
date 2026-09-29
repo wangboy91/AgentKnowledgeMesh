@@ -71,7 +71,7 @@ export default function Dashboard() {
     try {
       const result = await api.ragIndex()
       setLastIndex(result)
-      toast.success(t('dashboard.indexCompleted', { indexed: result.indexed }))
+      toast.success(t('dashboard.indexCompleted', { queued: result.queued }))
       await loadStats()
     } catch (err) {
       reportError(err)
@@ -155,8 +155,7 @@ export default function Dashboard() {
               <strong style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
                 {t('dashboard.lastIndex')}
               </strong>
-              <Row label={t('dashboard.chunks')} value={lastIndex.total_chunks} variant="accent" />
-              <Row label={t('dashboard.indexed')} value={lastIndex.indexed} variant="success" />
+              <Row label={t('dashboard.queued')} value={lastIndex.queued} variant="success" />
             </div>
           )}
         </div>
