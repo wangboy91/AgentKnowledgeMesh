@@ -247,6 +247,119 @@ curl -sI $BASE/assets/<构建产物文件名>        # 200
 - **任意层级同样成立**:把上面三处的 `/akm` 换成 `/a/b/c` 即可,无需其它改动;
 - **根路径部署行为不变**:`AKM_ROOT_PATH` 留空时与引入该能力前完全一致。
 
+### 1.10 远程服务器源码构建部署(SSH)
+
+适用:Hub 跑在**另一台服务器**(云主机 / 内网机器)上,并且要用**仓库源码**构建镜像 —— 不等 Release、要跑未发布的改动、或内网拉不到 GHCR。
+
+与 §1.8 是同一套构建方式(同一个叠加文件),差别只在**源码怎么到服务器**、服务器侧前置、以及端口放行。
+
+#### 步骤 1:服务器前置
+
+```bash
+docker --version && docker compose version    # 需要 Docker 20+ 与 Compose v2
+git --version                                 # 用 git 拉源码时需要
+```
+
+构建阶段会联网拉取基础镜像(`node:22-alpine`、`python:3.11-slim-bookworm`)与依赖(npm registry / PyPI),**服务器需能出网**。完全离线见本节末尾「离线 / 内网场景」。
+
+#### 步骤 2:取源码
+
+```bash
+git clone git@github.com:wangboy91/AgentKnowledgeMesh.git   # 或 https://github.com/wangboy91/AgentKnowledgeMesh.git
+cd AgentKnowledgeMesh
+git log --oneline -1        # 确认拿到目标提交
+```
+
+#### 步骤 3:生成 deploy/.env
+
+```bash
+cp deploy/.env.example deploy/.env
+```
+
+源码构建至少要确认下面几项(其余保持默认即可,逐项说明见 `deploy/.env.example`):
+
+| 变量 | 建议值 | 说明 |
+| --- | --- | --- |
+| `AKM_HUB_IMAGE` | `akm-hub:local` | 源码构建产物的本地镜像名与 tag |
+| `AKM_HUB_PORT` | `18000` | Hub 暴露给宿主机的端口(容器内固定 8000) |
+| `KNOWLEDGE_DIR` | 绝对路径 | 宿主机知识库目录(只读挂载到容器 `/knowledge`) |
+| `AKM_ADMIN_USERNAME` / `AKM_ADMIN_PASSWORD` | `admin` / 自定 | 管理员账号;不设密码则首启随机生成并打印在日志 |
+| `AKM_UV_EXTRAS` | 留空 | 留空 = 与发布镜像一致;要离线本地嵌入才设 `local-embedding`(显著增大体积与构建时长) |
+| `AKM_ROOT_PATH` | 留空 | 只在挂在反向代理子路径下时填(见 §1.9) |
+
+> SQLite 模式不需要 `POSTGRES_PASSWORD` / `AKM_DB_HOST` / `AKM_ARK_API_KEY` —— 这些只对 PG 模式生效。注意 **SQLite 模式不支持 RAG**(见 §1.2)。
+
+#### 步骤 4:构建并启动
+
+在**仓库根目录**执行:
+
+```bash
+# SQLite(零依赖,无 RAG)
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml up -d --build
+# PostgreSQL(自带 pgvector 容器,含 RAG)
+docker compose -f deploy/docker-compose.pg.yml -f deploy/docker-compose.build.yml up -d --build
+```
+
+首次构建要拉基础镜像 + `npm install` + `uv sync`,**数分钟级**;之后改代码重复同一条命令即增量重建(复用构建缓存)。
+
+> 服务器内存吃紧时构建可能被 OOM 杀掉(`vite build` 阶段最明显)。可临时加 swap,或改走末尾的「本地构建后传镜像」。
+
+#### 步骤 5:验证
+
+```bash
+docker compose -f deploy/docker-compose.yml ps             # akm-hub 应为 running
+curl -s http://127.0.0.1:18000/api/health                  # {"status":"running",...}
+docker compose -f deploy/docker-compose.yml logs akm-hub | grep 一次性密码
+```
+
+浏览器打开 `http://<服务器IP>:18000`(端口是 `AKM_HUB_PORT`,不是容器内的 8000)。
+
+仅内网访问可跳过;需要外部访问时放行端口:
+
+```bash
+sudo firewall-cmd --permanent --add-port=18000/tcp && sudo firewall-cmd --reload   # firewalld
+sudo ufw allow 18000/tcp                                                          # ufw
+# 云主机还要在控制台安全组放行同一端口
+```
+
+#### 步骤 6:接入节点
+
+在每台知识源机器上按 §2 一键安装,`akm-node login` 填 `http://<服务器IP>:18000/api`。
+
+> ⚠️ 端口必须等于 `AKM_HUB_PORT`(默认 18000)。Hub 在宿主机直接跑(`uv run akm-hub`)才是 8000。
+
+节点常驻后即开启文件监听(Linux / macOS 原生支持,秒级同步);服务化模板见 §2.5。
+
+#### 升级 / 回滚
+
+```bash
+# 升级:拉新源码后重复同一条 up -d --build;数据卷不受影响
+git pull
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml up -d --build
+
+# 回滚到 GHCR 镜像:换回基础 compose 单独执行
+docker compose -f deploy/docker-compose.yml up -d
+```
+
+#### 离线 / 内网场景
+
+服务器拉不到 GitHub、或构建阶段装不了依赖时,三条备选(按可行性排序):
+
+1. **传源码 tar**:本地 `git archive -o akm-src.tar.gz HEAD`,`scp` 上去解开再按步骤 3~4 构建 —— 服务器仍需能拉基础镜像与 npm / PyPI;
+2. **本地构建后传镜像**:本地 `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml build`,`docker save akm-hub:local | gzip > akm-hub.tgz`,`scp` 上去 `docker load < akm-hub.tgz`,服务器只执行基础 compose(`docker compose -f deploy/docker-compose.yml up -d`,镜像名由 `AKM_HUB_IMAGE` 指定)—— 服务器**完全不需要出网**;
+3. **推私有 registry**:`docker tag` + `docker push` 到内网 Harbor,服务器 `docker pull` 后执行基础 compose。
+
+#### 常见问题
+
+| 现象 | 原因与处理 |
+| --- | --- |
+| `failed to connect to the docker API` | Docker 守护进程没起,或当前用户不在 `docker` 组(`sudo usermod -aG docker $USER` 后重登) |
+| 构建卡在 `npm install` / `uv sync` | 服务器出网受限;配镜像源,或改走「本地构建后传镜像」 |
+| `up -d --build` 报镜像名冲突 | `deploy/.env` 的 `AKM_HUB_IMAGE` 与机器上其它部署重名,改一个 |
+| 容器 running 但 Web 打不开 | 先 `curl 127.0.0.1:<AKM_HUB_PORT>/api/health` 排除应用问题,再查防火墙 / 安全组 |
+| 节点连不上 Hub | 节点侧 API 地址端口要等于 `AKM_HUB_PORT`;挂在反代子路径下时地址要带前缀(§1.9) |
+| 改了 `.env` 没生效 | 要重建容器(`up -d`),`restart` 不会重新读取 `.env` |
+
 ---
 
 ## 2. 安装 akm-node(每台知识源机器)
@@ -328,6 +441,84 @@ docker compose -f deploy/docker-compose.node.yml up -d
 
 容器方式只影响节点进程怎么跑;Hub 侧看到的是一个普通节点,`akm-node --mcp` 的 MCP 接入(下节)在容器里同样可用(`docker compose -f deploy/docker-compose.node.yml exec akm-node uv run python -m app --mcp`)。
 
+### 2.5 后台常驻与文件监听
+
+节点常驻时会**监听知识库目录**,文件改动数秒内同步到 Hub;另按间隔做全量对账兜底。安装脚本执行完已按平台打印下面的模板,此处给同样的内容备查。
+
+**Linux —— systemd(user 级)**,保存为 `~/.config/systemd/user/akm-node.service`:
+
+```ini
+[Unit]
+Description=AgentKnowledgeMesh Node
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/akm-node
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now akm-node
+systemctl --user status akm-node
+# 需要未登录也运行:loginctl enable-linger $USER
+```
+
+**macOS —— launchd**,保存为 `~/Library/LaunchAgents/com.akm.node.plist`(把 `akm-node` 的绝对路径填进 `ProgramArguments`):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.akm.node</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/you/.local/bin/akm-node</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+```
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.akm.node.plist
+```
+
+**Windows —— 计划任务**(无需管理员):
+
+```powershell
+$action   = New-ScheduledTaskAction -Execute "<akm-node 的绝对路径>"
+$trigger  = New-ScheduledTaskTrigger -AtLogOn
+$settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+Register-ScheduledTask -TaskName "akm-node" -Action $action -Trigger $trigger -Settings $settings
+```
+
+任意平台也可用 pm2:`pm2 start akm-node --name akm-node`。
+
+**同步行为与配置**(写进 `~/.akm-node/.env`):
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `AKM_WATCH_ENABLED` | `true` | 文件监听总开关;容器场景应置 `false`(见 §2.4) |
+| `AKM_WATCH_DEBOUNCE_SECONDS` | `3` | 事件防抖窗口;编辑器保存等密集事件聚合后只触发一次同步 |
+| `AKM_WATCH_RECONCILE_SECONDS` | `300` | 定时全量对账间隔;`0` = 关闭 |
+| `AKM_WATCH_EXCLUDE` | 空 | 在内置排除目录之外追加的排除目录名(逗号分隔) |
+
+- 改动到 Hub 可见的延迟 ≈ 防抖窗口 + 上传耗时,典型 **< 10 秒**
+- 监听与对账**并存**:监听负责实时,对账兜住丢事件(跨平台差异、网络文件系统)
+- 只同步 `.md`;`.git` / `.venv` / `node_modules` / `dist` / `build` 等目录始终跳过
+- 其他电脑的智能体经 MCP 查询读到的是 Hub 最新数据;**文档不会下发到各节点本地磁盘**(节点只上行,无下行通道)
+
 ---
 
 ## 3. 本机智能体接入检索(MCP)
@@ -374,6 +565,8 @@ claude mcp add agentknowledge -- akm-node --mcp
 | 安装后新终端才有 `akm-node` | PATH 刷新所致,重开终端即可 |
 | 节点凭证失效(Web 端重置过 token) | 重新 `akm-node login`(运行中会主动询问是否现场重登) |
 | 想换知识库目录 | 改 `~/.akm-node/.env` 的 `AKM_KNOWLEDGE_ROOTS` 后重启节点 |
+| 改了文件但 Hub 上没更新 | 确认节点在运行且启动日志有「👁 监听中」;容器 / bind mount 场景监听不可用(见 §2.4),此时依赖对账(默认 300 秒),可调小 `AKM_WATCH_RECONCILE_SECONDS` |
+| 启动日志显示「文件监听已关闭」 | 该部署设了 `AKM_WATCH_ENABLED=false`(节点容器默认如此)。Linux 宿主可改为 `true` 获得秒级同步 |
 | Hub 换了地址 | 重新 `akm-node login` 输入新地址(凭证会刷新) |
 | Hub 挂在反代子路径下(如 `https://xx.com/akm/`) | 三处都要带前缀:Hub 侧 `AKM_ROOT_PATH=/akm`、反代转发 `/akm/`、节点侧 `AKM_HUB_API_URL=https://xx.com/akm/api`。见 §1.9 |
 | 子路径下页面能开但接口 404 / 白屏 | 检查 `AKM_ROOT_PATH` 与反代前缀是否一致;反代缺 WebSocket 升级头时节点会反复重连(§1.9) |

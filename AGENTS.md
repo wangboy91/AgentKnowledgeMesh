@@ -12,6 +12,7 @@ AgentKnowledgeMesh 是一个**独立项目**:面向 AI Agent 时代的分布式�
 | --- | --- |
 | 产品定位、角色权限、功能地图、迭代计划 | [docs/product-overview.md](docs/product-overview.md) |
 | 当前批次的技术设计(账号鉴权/CLI 接入/同步/RAG 模式/i18n/树形) | [docs/technical-design.md](docs/technical-design.md) |
+| **节点实时同步设计**(批次 1:文件监听 + 服务化,含多机共享架构) | [docs/node-realtime-sync-design.md](docs/node-realtime-sync-design.md) |
 | 全部 API 端点 | [docs/api-reference.md](docs/api-reference.md) |
 | **UI 规范**(布局/主题/i18n/交互) | [docs/conventions/ui.md](docs/conventions/ui.md) |
 | **流程规范**(变更分流/openspec 生命周期/验证基线/红线自查) | [docs/conventions/workflow.md](docs/conventions/workflow.md) |
