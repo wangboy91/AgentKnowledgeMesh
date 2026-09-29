@@ -1,7 +1,10 @@
 # 部署用 compose - PostgreSQL 模式(完整功能,含 RAG 语义检索)
 #
 # 与 SQLite 版(docker-compose.yml)的区别:附带 pgvector 数据库容器,
-# 支持语义检索/自动向量化。需要 RAG 功能请用本文件部署。
+# 支持语义检索/向量化。需要 RAG 功能请用本文件部署。
+#
+# ℹ️ 向量化默认关闭,部署后在 Web 设置页开启「向量化」才会启用语义检索;
+#    需要新文档自动入库再把「RAG 同步模式」切为 auto(默认 manual)。
 #
 # 用法:与 Release 中下载的 docker-compose.pg.yml 放在同一目录,
 #   可选创建 .env 覆盖默认值(变量清单与说明见同目录的 .env.example)
@@ -32,6 +35,10 @@ services:
       - AKM_DB_NAME=${AKM_DB_NAME:-agentvault}
       - AKM_DB_USER=${AKM_DB_USER:-postgres}
       - AKM_DB_PASSWORD=${POSTGRES_PASSWORD:-agentvault}
+      # 子路径部署:整个服务挂在反向代理的某个前缀下时填写(如 /akm)。
+      # 留空 = 部署在域名根路径。支持任意层级(/akm、/a/b/c …),
+      # 反代「剥离前缀」与「保留前缀」两种写法都能用,详见 docs/deployment.md §1.9
+      - AKM_ROOT_PATH=${AKM_ROOT_PATH:-}
       # 向量嵌入:默认走火山引擎 Ark(代码默认即 ark),API Key 由部署方
       # 在本目录 .env 中提供(绝不打进镜像);不配置时语义检索报
       # "AKM_ARK_API_KEY 未配置"。local 模式为可选依赖,随 Release 的镜像

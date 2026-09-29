@@ -39,6 +39,10 @@ services:
     container_name: ${AKM_NODE_CONTAINER_NAME:-akm-node}
     environment:
       # 容器内访问宿主机上的 Hub:host.docker.internal(下方 extra_hosts 保证 Linux 也可用)
+      # Hub 若部署在反代子路径下(如 https://xx.com/akm/),这两个地址都要带上前缀:
+      #   AKM_HUB_API_URL=https://xx.com/akm/api
+      #   AKM_HUB_URL=wss://xx.com/akm/ws
+      # (用 `akm-node login` 交互登录时直接填带前缀的 API 地址,WS 地址会自动推导)
       - AKM_HUB_API_URL=${AKM_HUB_API_URL:-http://host.docker.internal:8000/api}
       - AKM_HUB_URL=${AKM_HUB_URL:-ws://host.docker.internal:8000/ws}
       - AKM_NODE_NAME=${AKM_NODE_NAME:-akm-docker-node}

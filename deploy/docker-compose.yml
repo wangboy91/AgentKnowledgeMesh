@@ -1,7 +1,7 @@
 # 部署用 compose(随 GitHub Release 分发)- SQLite 模式
 #
-# ⚠️ SQLite 模式不支持 RAG(语义检索 / 自动向量化):向量库依赖 PostgreSQL + pgvector,
-#    SQLite 模式下这些功能降级不可用,语义检索接口返回错误。
+# ⚠️ SQLite 模式不支持 RAG(语义检索 / 向量化):向量库依赖 PostgreSQL + pgvector,
+#    SQLite 模式下语义检索自动降级为关键词检索,向量化也无法开启。
 #    需要完整功能(含语义检索)请用随 Release 分发的 docker-compose.pg.yml。
 #
 # 用法:与 Release 中下载的 docker-compose.yml 放在同一目录,
@@ -29,6 +29,10 @@ services:
       - AKM_KNOWLEDGE_ROOTS=/knowledge
       - AKM_DB_TYPE=sqlite
       - AKM_DB_PATH=/app/data/agentvault.db
+      # 子路径部署:整个服务挂在反向代理的某个前缀下时填写(如 /akm)。
+      # 留空 = 部署在域名根路径。支持任意层级(/akm、/a/b/c …),
+      # 反代「剥离前缀」与「保留前缀」两种写法都能用,详见 docs/deployment.md §1.9
+      - AKM_ROOT_PATH=${AKM_ROOT_PATH:-}
       # 管理员账号:不设置 AKM_ADMIN_PASSWORD 时,首次启动生成随机密码
       # 打印在容器日志中(docker compose logs akm-hub | grep 一次性密码)
       - AKM_ADMIN_USERNAME=${AKM_ADMIN_USERNAME:-admin}

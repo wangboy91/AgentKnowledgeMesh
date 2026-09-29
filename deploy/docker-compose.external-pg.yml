@@ -46,6 +46,10 @@ services:
       - AKM_DB_NAME=${AKM_DB_NAME:-agentvault}
       - AKM_DB_USER=${AKM_DB_USER:-postgres}
       - AKM_DB_PASSWORD=${AKM_DB_PASSWORD:?请在 .env 中设置 AKM_DB_PASSWORD}
+      # 子路径部署:整个服务挂在反向代理的某个前缀下时填写(如 /akm)。
+      # 留空 = 部署在域名根路径。支持任意层级(/akm、/a/b/c …),
+      # 反代「剥离前缀」与「保留前缀」两种写法都能用,详见 docs/deployment.md §1.9
+      - AKM_ROOT_PATH=${AKM_ROOT_PATH:-}
       # 向量嵌入:默认走火山引擎 Ark(代码默认即 ark),API Key 由部署方
       # 在本目录 .env 中提供(绝不打进镜像);不配置时语义检索报
       # "AKM_ARK_API_KEY 未配置"。local 模式为可选依赖,随 Release 的镜像
