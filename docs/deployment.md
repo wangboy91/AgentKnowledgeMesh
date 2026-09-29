@@ -324,7 +324,32 @@ sudo ufw allow 18000/tcp                                                        
 
 #### 步骤 6:接入节点
 
-在每台知识源机器上按 §2 一键安装,`akm-node login` 填 `http://<服务器IP>:18000/api`。
+> ⚠️ **Hub 用源码构建时,节点也必须用源码安装**。§2.1 的一键安装脚本从 GitHub **Release** 取 wheel,而 Release 版本落后源码(当前最新 `v0.2.1` 落后 9 个提交),**不含**节点文件监听(批次 1)与 MCP 写工具(批次 3)。用 Release 节点配源码 Hub,会表现为「改了文件 Hub 上不更新」「节点代理里没有 `create_document` 工具」。
+
+在每台知识源机器上(需能访问 GitHub):
+
+```bash
+# 安装 uv(若没有)
+curl -LsSf https://astral.sh/uv/install.sh | sh && source ~/.local/bin/env
+
+# 取源码并运行节点
+git clone https://github.com/wangboy91/AgentKnowledgeMesh.git ~/akm-src
+cd ~/akm-src/src/node
+uv sync
+uv run akm-node login          # Hub API 地址填 http://<服务器IP>:18000/api
+uv run akm-node                # 前台常驻;Ctrl+C 退出
+```
+
+想把 `akm-node` 装成全局命令(脱离仓库目录也能跑),先在仓库里构建 wheel,再用安装脚本跳过下载:
+
+```bash
+# 构建(任一有 uv 的机器,Hub 服务器上做也可以)
+cd ~/akm-src/src/shared && uv build --out-dir ../dist
+cd ../node && uv build --out-dir ../dist
+
+# 目标机器:把 src/dist 拷过去
+AKM_WHEEL_DIR=/path/to/dist bash install-akm-node.sh
+```
 
 > ⚠️ 端口必须等于 `AKM_HUB_PORT`(默认 18000)。Hub 在宿主机直接跑(`uv run akm-hub`)才是 8000。
 
@@ -380,7 +405,10 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/wangboy91/AgentKno
 
 脚本自动完成:检测/安装 uv → 从 Release 下载 `akm_shared`/`akm_node` wheel → `uv tool install` 出全局 `akm-node` 命令。
 
+> ⚠️ **Hub 若是源码构建部署的,节点不要走这条一键安装**:Release wheel 落后源码,不含节点文件监听与 MCP 写工具。改走 §1.10 步骤 6 的源码安装方式。
+
 - 锁定版本:`AKM_VERSION=0.2.0` 环境变量后再执行;
+- 离线 / 内网:构建好 wheel 后用 `AKM_WHEEL_DIR=<wheel 目录>` 跳过下载;
 - 升级:重新执行安装脚本(等价于升级到目标版本,凭证保留);
 - 回滚:`AKM_VERSION=<旧版>` 再执行一次。
 
