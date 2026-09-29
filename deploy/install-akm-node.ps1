@@ -76,8 +76,33 @@ Write-Host "✅ akm-node $Version 安装完成"
 Write-Host "=================================================="
 Write-Host "下一步:"
 Write-Host "  1. akm-node login        # 输入 Hub 地址与管理员账号,成功后自动连接并首次同步"
-Write-Host "  2. akm-node              # 之后常驻运行(登录后已自动运行,此命令用于再次启动)"
+Write-Host "  2. akm-node              # 之后常驻运行(文件改动自动同步到 Hub)"
 Write-Host "  3. akm-node --mcp        # 供本机智能体(MCP)调用的检索工具"
 Write-Host ""
 Write-Host "凭证保存在 $HOME\.akm-node\.env,可用 AKM_NODE_ENV_FILE 自定义路径"
 Write-Host "如当前终端找不到 akm-node 命令,请重开终端(PATH 刷新)"
+Write-Host ""
+
+# ---------- 6. 后台常驻模板(可选;只打印,不自动注册) ----------
+$AkmBin = (Get-Command akm-node -ErrorAction SilentlyContinue).Source
+if (-not $AkmBin) { $AkmBin = Join-Path $HOME ".local\bin\akm-node.exe" }
+
+Write-Host "--------------------------------------------------"
+Write-Host "可选:让节点后台常驻(文件改动数秒内同步到 Hub)"
+Write-Host "--------------------------------------------------"
+Write-Host "计划任务 —— 复制以下命令到 PowerShell 执行(无需管理员):"
+Write-Host ""
+Write-Host @"
+`$action   = New-ScheduledTaskAction -Execute "$AkmBin"
+`$trigger  = New-ScheduledTaskTrigger -AtLogOn
+`$settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+Register-ScheduledTask -TaskName "akm-node" -Action `$action -Trigger `$trigger -Settings `$settings -Description "AgentKnowledgeMesh Node"
+"@
+Write-Host ""
+Write-Host "管理:"
+Write-Host "  Start-ScheduledTask -TaskName akm-node"
+Write-Host "  Get-ScheduledTask   -TaskName akm-node"
+Write-Host "  Unregister-ScheduledTask -TaskName akm-node -Confirm:`$false"
+Write-Host ""
+Write-Host "提示:节点监听知识库目录,文件改动数秒内同步到 Hub。"
+Write-Host "      容器 / 网络挂载场景事件监听不可用,请在 $HOME\.akm-node\.env 设 AKM_WATCH_ENABLED=false 依赖定时对账。"

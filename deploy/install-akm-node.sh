@@ -66,7 +66,75 @@ echo "✅ akm-node ${VERSION} 安装完成"
 echo "=================================================="
 echo "下一步:"
 echo "  1. akm-node login        # 输入 Hub 地址与管理员账号,接入知识库"
-echo "  2. akm-node              # 常驻运行,同步本地知识目录"
+echo "  2. akm-node              # 常驻运行,同步本地知识目录(文件改动自动同步)"
 echo "  3. akm-node --mcp        # 供本机智能体(MCP)调用的检索工具"
 echo ""
 echo "凭证保存在 ~/.akm-node/.env,可用 AKM_NODE_ENV_FILE 自定义路径"
+echo ""
+
+# ---------- 6. 后台常驻模板(可选;只打印,不自动注册) ----------
+AKM_BIN="$(command -v akm-node 2>/dev/null || echo "$HOME/.local/bin/akm-node")"
+OS_NAME="$(uname -s)"
+
+echo "--------------------------------------------------"
+echo "可选:让节点后台常驻(文件改动数秒内同步到 Hub)"
+echo "--------------------------------------------------"
+
+if [ "$OS_NAME" = "Linux" ]; then
+    echo "systemd(user 级)—— 内容保存为 ~/.config/systemd/user/akm-node.service:"
+    echo ""
+    cat <<EOF
+[Unit]
+Description=AgentKnowledgeMesh Node
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${AKM_BIN}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+    echo ""
+    echo "启用:"
+    echo "  systemctl --user daemon-reload"
+    echo "  systemctl --user enable --now akm-node"
+    echo "  systemctl --user status akm-node"
+    echo "  # 需要未登录也运行:loginctl enable-linger \$USER"
+elif [ "$OS_NAME" = "Darwin" ]; then
+    echo "launchd —— 内容保存为 ~/Library/LaunchAgents/com.akm.node.plist:"
+    echo ""
+    cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.akm.node</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${AKM_BIN}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>
+EOF
+    echo ""
+    echo "启用:"
+    echo "  launchctl load ~/Library/LaunchAgents/com.akm.node.plist"
+    echo "  launchctl list | grep akm"
+else
+    echo "当前平台(${OS_NAME})请用 pm2 或系统自带的服务管理方式托管。"
+fi
+
+echo ""
+echo "任意平台也可用 pm2:  pm2 start akm-node --name akm-node"
+echo ""
+echo "提示:节点监听知识库目录,文件改动数秒内同步到 Hub。"
+echo "      容器 / 网络挂载(bind mount)场景事件监听不可用,"
+echo "      请在 ~/.akm-node/.env 设 AKM_WATCH_ENABLED=false 依赖定时对账。"

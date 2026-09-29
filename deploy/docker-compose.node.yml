@@ -27,6 +27,9 @@
 #      另注意端口要对上 Hub 实际暴露的宿主机端口(deploy compose 默认 18000,宿主机直跑是 8000)。
 #   2) 未登录就启动:进程会因"节点尚未接入"退出并被 restart 策略拉起,日志反复出现该提示
 #      —— 按上面第 1 步先登录即可。
+#   3) 文件监听默认关闭(AKM_WATCH_ENABLED=false):Windows / macOS 宿主的 bind mount
+#      不传播 inotify 事件,监听会静默失效。关闭后依赖定时对账(默认 300 秒全量扫描),
+#      变更到 Hub 可见的延迟以对账间隔为准;Linux 宿主可设为 true 获得秒级同步。
 #
 # 凭证与同步快照持久化在卷 akm-node-state(`/root/.akm-node`),重建容器不丢登录。
 
@@ -47,6 +50,10 @@ services:
       - AKM_HUB_URL=${AKM_HUB_URL:-ws://host.docker.internal:8000/ws}
       - AKM_NODE_NAME=${AKM_NODE_NAME:-akm-docker-node}
       - AKM_KNOWLEDGE_ROOTS=/knowledge
+      # 文件监听默认关闭:Windows / macOS 宿主的 bind mount 不传播 inotify 事件,
+      # 监听会**静默失效**(比报错更危险),故默认依赖定时对账(每 300 秒全量扫描)。
+      # Linux 宿主可设为 true —— 内核原生支持 bind mount 的事件传播。
+      - AKM_WATCH_ENABLED=${AKM_WATCH_ENABLED:-false}
     volumes:
       # 本机知识库目录(只读挂载,修改为你的实际路径或在 .env 中设置 KNOWLEDGE_DIR)
       - ${KNOWLEDGE_DIR:-./knowledge}:/knowledge:ro

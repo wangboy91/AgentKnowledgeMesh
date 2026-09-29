@@ -21,6 +21,10 @@ _AKM_ENV_KEYS = [
     "AKM_HUB_API_URL",
     "AKM_KNOWLEDGE_ROOTS",
     "AKM_NODE_ENV_FILE",
+    "AKM_WATCH_ENABLED",
+    "AKM_WATCH_DEBOUNCE_SECONDS",
+    "AKM_WATCH_RECONCILE_SECONDS",
+    "AKM_WATCH_EXCLUDE",
 ]
 
 
@@ -76,3 +80,43 @@ def test_default_user_env_file(monkeypatch):
         assert reloaded.USER_ENV_FILE == Path.home() / ".akm-node" / ".env"
     finally:
         importlib.reload(config)
+
+
+# ---- 文件监听与定时对账配置（add-node-file-watch） ----
+
+def test_watch_defaults(monkeypatch):
+    """监听默认开启、防抖 3 秒、对账 300 秒、无追加排除."""
+    for key in _AKM_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    settings = NodeSettings(_env_file=None)
+
+    assert settings.watch_enabled is True
+    assert settings.watch_debounce_seconds == 3.0
+    assert settings.watch_reconcile_seconds == 300
+    assert settings.watch_exclude == ""
+    assert settings.watch_excluded_names == set()
+
+
+def test_watch_env_overrides(monkeypatch):
+    """环境变量可覆盖；对账置 0 表示关闭."""
+    monkeypatch.setenv("AKM_WATCH_ENABLED", "false")
+    monkeypatch.setenv("AKM_WATCH_DEBOUNCE_SECONDS", "1.5")
+    monkeypatch.setenv("AKM_WATCH_RECONCILE_SECONDS", "0")
+    monkeypatch.setenv("AKM_WATCH_EXCLUDE", "vendor,tmp")
+    try:
+        settings = NodeSettings(_env_file=None)
+        assert settings.watch_enabled is False
+        assert settings.watch_debounce_seconds == 1.5
+        assert settings.watch_reconcile_seconds == 0
+        assert settings.watch_excluded_names == {"vendor", "tmp"}
+    finally:
+        for key in _AKM_ENV_KEYS:
+            monkeypatch.delenv(key, raising=False)
+
+
+def test_watch_excluded_names_ignores_blanks(monkeypatch):
+    monkeypatch.setenv("AKM_WATCH_EXCLUDE", " a , ,b ")
+    try:
+        assert NodeSettings(_env_file=None).watch_excluded_names == {"a", "b"}
+    finally:
+        monkeypatch.delenv("AKM_WATCH_EXCLUDE", raising=False)

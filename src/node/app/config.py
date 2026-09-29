@@ -58,6 +58,25 @@ class NodeSettings(BaseSettings):
         30,
     )
 
+    # 文件变更监听与定时对账（add-node-file-watch）：
+    # 监听负责实时（低延迟），对账负责最终一致（兜底监听丢事件的场景）。
+    watch_enabled: bool = Field(
+        True,
+    )
+    # 事件防抖窗口（秒）：编辑器保存/git checkout/批量复制会产出密集事件，
+    # 聚合后再触发一次同步
+    watch_debounce_seconds: float = Field(
+        3.0,
+    )
+    # 定时全量对账间隔（秒）；0 表示关闭对账（仅靠监听，接受丢事件风险）
+    watch_reconcile_seconds: int = Field(
+        300,
+    )
+    # 在内置排除目录之外追加的排除目录名（逗号分隔）
+    watch_exclude: str = Field(
+        "",
+    )
+
     model_config = {
         "env_prefix": "AKM_",
         # 列表后者优先：用户目录文件覆盖开发仓的 src/node/.env
@@ -98,6 +117,11 @@ class NodeSettings(BaseSettings):
                 if path.exists():
                     paths.append(path)
         return paths
+
+    @property
+    def watch_excluded_names(self) -> set[str]:
+        """追加的排除目录名(逗号分隔);内置规则见 akm_shared.is_watchable_markdown."""
+        return {name.strip() for name in self.watch_exclude.split(",") if name.strip()}
 
 
 settings = NodeSettings()
