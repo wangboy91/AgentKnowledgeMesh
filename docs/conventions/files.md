@@ -59,6 +59,8 @@ docs/
 ├── api-reference.md       # API 参考(全部端点)
 ├── deployment.md          # 部署指南(Hub 容器 / akm-node 一键安装)
 ├── llm-wiki-exploration.md # 设计探索:LLM wiki + RAG 协同(未立项,待决策)
+├── node-realtime-sync-design.md # 节点实时同步与服务化:批次 1 架构与实现设计
+├── agent-write-back-design.md # 智能体写回(MCP 写工具):批次 3 架构与实现设计
 └── conventions/
     ├── ui.md              # UI 规范(布局/主题/i18n/交互)
     ├── workflow.md        # 流程规范(openspec 生命周期/验证基线)

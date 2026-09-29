@@ -74,6 +74,8 @@ api_tokens: id(PK), name, token_hash(sha256), role("viewer"|"admin"),
 实现:FastAPI dependency `require_auth(min_role)` 注入各路由;`/api/context`、`/api/mcp/sse` 接受 JWT **或** API Token。
 
 > 节点凭证(node token)授权范围:仅**只读**知识端点(`GET /api/search`、`/api/rag/search`、`/api/context`、`/api/documents` 读取类),供节点本地 MCP 代理使用(§9.2);不得访问用户管理、写操作与其他节点数据。
+>
+> ⚠️ **已被后续变更扩展**:`2026-09-29-add-mcp-write-tools`(批次 3)起,节点凭证另获**受限写权限**——`POST /api/documents` 与 `PUT /api/documents/{doc_id}` 放行,但作用域限本节点名下文档(跨节点 403);其余写端点(扫描、节点管理)仍 403。详见 [agent-write-back-design.md](agent-write-back-design.md)。
 
 ### 2.5 前端
 
@@ -258,15 +260,19 @@ documents 新增列: rag_status TEXT  ("pending"|"indexed"|"excluded")
 ### 9.2 Node 本地 MCP 代理(新增)
 
 - 形态:stdio(`akm-node --mcp`),智能体拉起子进程,无需常驻端口;不需要额外的守护进程
-- 实现:轻量代理 —— 三个工具与 Hub MCP 同名同参,内部转调 Hub HTTP API(复用节点已有 httpx 与凭证):
+- 实现:轻量代理 —— 工具与 Hub MCP 同名同参,内部转调 Hub HTTP API(复用节点已有 httpx 与凭证):
 
   | MCP 工具 | 转调 |
   | --- | --- |
   | `search_documents` | `GET /api/search`(可扩展 `mode=semantic` → `GET /api/rag/search`) |
   | `get_document` | `GET /api/documents/{id}` |
   | `list_documents` | `GET /api/documents` |
+  | `create_document` | `POST /api/documents`(批次 3 新增,见下) |
+  | `update_document` | `PUT /api/documents/{id}`(批次 3 新增,见下) |
 
 - 凭证:`akm-node login` 写入的 `AKM_NODE_ID` / `AKM_NODE_TOKEN`;Hub 侧授权 node token **只读**知识端点(§2.4 补充)
+
+> ⚠️ **写工具由后续变更新增**:`2026-09-29-add-mcp-write-tools`(批次 3)为节点代理补上 `create_document` / `update_document`,节点凭证据此获得**作用域限本节点**的写权限(请求体不携带 `node_id`,归属由 Hub 强制)。见 [agent-write-back-design.md](agent-write-back-design.md)。
 - Hub 不可达时返回明确错误信息;V1.0 备选:离线降级(本地文件现扫 + 关键词匹配)
 - **节点不做第二检索引擎**:节点无索引无向量,语义质量必须由 Hub 保证;节点只做"就近入口"
 

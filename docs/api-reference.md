@@ -14,7 +14,7 @@
 | GET/POST/DELETE | `/api/auth/tokens` | API Token 管理(创建仅返回一次明文/吊销软删/彻底删除已吊销) | admin |
 | POST | `/api/auth/tokens/{id}/rotate` | 轮换 Token:同一记录换发新密钥,旧密钥立即失效,不产生"已吊销"残留(明文仅本次返回) | admin |
 
-> 除 `GET /api/health` 与 auth 外,全部端点需要 `Authorization: Bearer <JWT|API Token|节点token>`;viewer 只读,admin 可写。Agent/脚本用 API Token 调 Context API 与 MCP SSE。节点凭证(node token)另享**只读**知识端点权限(search / rag/search / context / documents 读取类),供节点本地 MCP 代理使用(见 [technical-design.md §9](technical-design.md))。首次启动自动创建管理员(环境变量或随机密码打印);本机恢复:`uv run akm-hub reset-password <username>`。
+> 除 `GET /api/health` 与 auth 外,全部端点需要 `Authorization: Bearer <JWT|API Token|节点token>`;viewer 只读,admin 可写。Agent/脚本用 API Token 调 Context API 与 MCP SSE。节点凭证(node token)另享**只读**知识端点权限(search / rag/search / context / documents 读取类),以及**受限写权限**:`POST /api/documents` 与 `PUT /api/documents/:id` 放行,但作用域限本节点(创建的文档归属该节点,仅能更新 `node_id` 等于该节点的文档,跨节点 403)。其余写端点(扫描、节点管理)节点凭证仍 403。供节点本地 MCP 代理写回使用(见 [agent-write-back-design.md](agent-write-back-design.md))。首次启动自动创建管理员(环境变量或随机密码打印);本机恢复:`uv run akm-hub reset-password <username>`。
 
 ## 2. 系统与文档
 
@@ -25,9 +25,9 @@
 | GET | `/api/documents` | 文档列表(支持 `node_id` / `rag_status` 过滤;🆕 `path` 精确匹配,组合 `node_id` 可唯一定位) |
 | GET | `/api/documents/tree?node_id=` | 文件树(🆕 `node_id` 按节点过滤;🆕 `dir` 目录切片:传目录路径(含空串=根)返回该目录**一层直接子项**供前端懒加载,缺省返回完整树;叶子节点携带 `id`) |
 | GET | `/api/documents/:id` | 文档详情(含内容) |
-| POST | `/api/documents/scan` | 触发本地扫描 |
-| PUT | `/api/documents/:id` | 编辑文档 |
-| POST | `/api/documents` | 新建文档 |
+| POST | `/api/documents/scan` | 触发本地扫描(admin) |
+| PUT | `/api/documents/:id` | 编辑文档(admin,或节点凭证且文档归属本节点) |
+| POST | `/api/documents` | 新建文档(admin,或节点凭证——归属强制为该节点;唯一性按 `(node_id, path)`) |
 
 ## 3. 检索与 RAG
 
@@ -75,6 +75,19 @@
 | GET | `/api/mcp/sse` | MCP SSE 端点(需 JWT 或 API Token) |
 | POST | `/api/mcp/messages` | MCP 消息端点(需 JWT 或 API Token) |
 | stdio | `uv run akm-hub --mcp` | 本机 stdio 模式(免鉴权,本机信任) |
+| stdio | `uv run akm-node --mcp` | 节点本地代理(节点凭证转调 Hub HTTP) |
+
+工具集(三形态同名同参同输出):
+
+| 工具 | 参数 | 说明 |
+| --- | --- | --- |
+| `search_documents` | `query`(必填)、`mode`(`keyword`/`semantic`)、`limit` | 关键词或语义检索 |
+| `get_document` | `document_id`(必填) | 取文档全文 |
+| `list_documents` | `node_id`、`limit` | 列出文档 |
+| `create_document` | `path`、`content`(必填)、`title` | 新建文档(写回;路径冲突提示改用 update) |
+| `update_document` | `document_id`、`content`(必填) | 覆盖更新正文(写回) |
+
+> 写回工具的归属:Hub 形态归属 `local`;节点代理形态由 Hub 依节点凭证强制归属该节点,代理不传递也不允许指定 `node_id`。
 
 ## 7. WebSocket 协议(`/ws`)
 

@@ -19,10 +19,12 @@
 - 🔐 账号体系(admin / viewer)+ 全端点鉴权
 - ⌨️ 节点 CLI 登录接入(`akm-node login`,登录成功即自动连接并首次同步),token 可吊销/重置;`--help` 说明命令与断线重连行为
 - 📦 hash-first 增量同步(只传变更)
+- 👁 文件变更实时监听(改动数秒内同步到 Hub)+ 定时对账兜底
 - 🎚️ RAG 同步模式(auto / manual + 文档级勾选)
 - 🌍 界面中英文切换
 - 🌲 知识库三栏树形浏览(节点 → 目录树 → 文档)
 - 🔌 Node 本地 MCP 代理(`akm-node --mcp`,智能体零配置接入)
+- ✍️ 智能体写回(MCP `create_document` / `update_document`;节点凭证可写但作用域限本节点,写回内容立即进入检索与多机分发)
 
 完整迭代计划见 [docs/product-overview.md](docs/product-overview.md)。
 
@@ -98,6 +100,10 @@ uv run akm-node --help  # 命令一览:用法、断开(Ctrl+C)与断线重连(5 
 > 知识库目录仍通过节点本地 `.env` 的 `AKM_KNOWLEDGE_ROOTS` 配置(参考 `src/node/.env.example`)。
 >
 > 同步为 hash-first 增量:首轮全量上传,之后未变更文档仅上报 path+hash,删除显式走 `deletions`;快照存于 `src/node/data/sync_state.json`(已 gitignore),删除它可在下轮强制全量重建。协议细节见 [docs/api-reference.md §8](docs/api-reference.md)。
+>
+> 节点常驻时会**监听知识库目录**,文件改动数秒内同步到 Hub(防抖默认 3 秒),另每 300 秒做一次全量对账兜底(监听可能丢事件)。只同步 `.md`,`.git` / `node_modules` / `dist` 等目录自动跳过;四个配置项(`AKM_WATCH_*`)与后台常驻模板见 [docs/deployment.md §2.5](docs/deployment.md)。容器 / bind mount 场景监听不可用,自动依赖对账。
+>
+> ⚠️ 同步是**单向**的:各节点把文档推给 Hub,其他电脑的智能体经 MCP / Web 查询 Hub 拿到最新内容;文档不会下发到各节点本地磁盘。
 
 ### Docker
 
@@ -148,7 +154,9 @@ docker compose -f deploy/docker-compose.node.yml up -d --build
 { "mcpServers": { "agentknowledge": { "command": "akm-node", "args": ["--mcp"] } } }
 ```
 
-节点代理经 stdio 提供与 Hub 同名的三个工具(`search_documents` / `get_document` / `list_documents`),内部转调 Hub HTTP API(统一 10s 超时);`search_documents` 支持 `mode=semantic` 走 Hub 语义混合检索(向量⊕关键词按权重融合,**需 Hub 为 PostgreSQL 模式**);节点本地无凭证(未执行过 `akm-node login`)时会输出"请先执行 akm-node login"并退出。
+节点代理经 stdio 提供与 Hub 同名的**五个**工具:只读 `search_documents` / `get_document` / `list_documents`,以及写回 `create_document` / `update_document`,内部转调 Hub HTTP API(统一 10s 超时);`search_documents` 支持 `mode=semantic` 走 Hub 语义混合检索(向量⊕关键词按权重融合,**需 Hub 为 PostgreSQL 模式**);节点本地无凭证(未执行过 `akm-node login`)时会输出"请先执行 akm-node login"并退出。
+
+**智能体写回**:`create_document(path, content, title?)` 新建、`update_document(document_id, content)` 覆盖更新。经节点代理写入时,文档归属该节点(`node_id` 由 Hub 依节点凭证强制,代理无法指定),且只能更新本节点名下的文档(跨节点 403);经 Hub stdio/SSE 写入时归属 `local`。路径唯一性按 `(node_id, path)` 判定——不同机器的同名路径可共存。写回内容立即进入检索与多机分发,其他电脑的智能体随即检索得到。写回**不落本地磁盘**(文档只存在于 Hub),也不会删除任何文档。详见 [docs/agent-write-back-design.md](docs/agent-write-back-design.md)。
 
 远程/无节点机器用 Hub:SSE 模式 `"url": "http://localhost:8000/api/mcp/sse"`(需在 Web「设置」页创建 API Token),或 Hub 本机 stdio 模式 `"command": "uv", "args": ["run", "akm-hub", "--mcp"]`。三种接入形态工具集与返回格式完全一致。测试:`npx @modelcontextprotocol/inspector http://localhost:8000/api/mcp/sse`。
 

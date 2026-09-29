@@ -144,11 +144,17 @@ async def resolve_principal(token: str, session: AsyncSession) -> Optional[Princ
     return None
 
 
-def require_auth(min_role: str = "viewer", allow_node: bool = False):
+def require_auth(min_role: str = "viewer", allow_node: bool = False, node_write: bool = False):
     """鉴权依赖工厂.
 
     min_role: "viewer" 任意用户级凭证可访问; "admin" 仅 admin。
     allow_node: 是否放行节点凭证(仅只读知识端点为 True)。
+    node_write: 是否放行节点凭证的写操作。此时节点被视作已通过角色校验,
+        **端点 MUST 在业务层校验 `principal.node_id` 作用域**(节点只能写
+        自己名下的文档)——鉴权依赖拿不到目标文档,无从判断归属。
+
+    节点凭证三态:node_write=True 放行(作用域由端点管);否则 allow_node
+    为真且 min_role=="viewer" 时放行(只读语义);其余一律 403。
     """
 
     async def dependency(
@@ -162,6 +168,8 @@ def require_auth(min_role: str = "viewer", allow_node: bool = False):
         if principal is None:
             raise HTTPException(status_code=401, detail="Invalid or expired credentials")
         if principal.kind == "node":
+            if node_write:
+                return principal
             if not allow_node:
                 raise HTTPException(status_code=403, detail="Node credentials are read-only")
             if min_role != "viewer":

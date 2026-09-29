@@ -48,6 +48,27 @@ def format_document_list(documents: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def format_document_created(doc: dict) -> str:
+    """格式化"创建成功"结果(写工具共用)."""
+    return (
+        f"已创建文档 [{doc['id']}] {doc['title']}\n"
+        f"- 路径: {doc['path']}\n"
+        f"- 节点: {doc['node_id']}\n"
+        f"- 大小: {doc['size'] / 1024:.1f} KB"
+    )
+
+
+def format_document_updated(doc: dict) -> str:
+    """格式化"更新成功"结果(写工具共用)."""
+    return (
+        f"已更新文档 [{doc['id']}] {doc['title']}\n"
+        f"- 路径: {doc['path']}\n"
+        f"- 节点: {doc['node_id']}\n"
+        f"- 大小: {doc['size'] / 1024:.1f} KB\n"
+        f"- 更新时间: {doc['updated_at']}"
+    )
+
+
 def format_semantic_search(query: str, results: list[dict]) -> str:
     """格式化语义检索结果(关键词格式同构,增加分数与命中分块)."""
     if not results:

@@ -3,15 +3,19 @@
 覆盖:
 - 格式化函数:命中 / 空结果 / 空文档(与 Hub MCP 输出格式一致)
 - 工具转调:search / get / list 成功路径与本地过滤截断
+- 工具转调:create / update 写回(方法 / 路径 / body,不携带 node_id)
 - 错误映射:连接失败 / 401 凭证失效 / 超时 → isError 文本,进程不崩溃
+- 写回错误映射:409 路径冲突 / 403 越权 / 404 不存在
 """
 
 import httpx
 import mcp.types as types
 
 from akm_shared.mcp_formatting import (
+    format_document_created,
     format_document_detail,
     format_document_list,
+    format_document_updated,
     format_search_results,
     format_semantic_search,
 )
@@ -283,3 +287,205 @@ async def test_search_semantic_error_field(monkeypatch):
 
     assert result.is_error
     assert "语义检索失败" in result.content[0].text
+
+
+# ---- 写回工具:格式化函数 ----
+
+def test_format_document_created():
+    text = format_document_created(_hit_doc())
+    assert "已创建文档 [1] Alpha" in text
+    assert "- 路径: kb/a.md" in text
+    assert "- 节点: node-1" in text
+    assert "- 大小: 2.0 KB" in text
+
+
+def test_format_document_updated():
+    text = format_document_updated(_hit_doc())
+    assert "已更新文档 [1] Alpha" in text
+    assert "- 更新时间: 2026-09-11T00:00:00" in text
+
+
+# ---- 写回工具:转调与错误映射 ----
+
+from app.mcp_proxy import _create_document, _update_document  # noqa: E402
+
+
+def _patch_hub_write(monkeypatch, responses):
+    """让 _hub_write 返回预设响应或抛预设异常(循环复用),记录 (method, path, json)."""
+    import itertools
+
+    import app.mcp_proxy as proxy
+
+    calls = []
+    pool = itertools.cycle(responses)
+
+    async def fake_hub_write(method, path, json):
+        calls.append((method, path, json))
+        result = next(pool)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(proxy, "_hub_write", fake_hub_write)
+    return calls
+
+
+async def test_create_document_forwards_without_node_id(monkeypatch):
+    """create → POST /documents;请求体不得携带 node_id(归属由 Hub 强制)."""
+    calls = _patch_hub_write(monkeypatch, [_FakeResponse(200, _hit_doc())])
+
+    result = await _create_document("kb/a.md", "# Alpha\n\nbody", title="Alpha")
+
+    assert calls[0][0] == "POST"
+    assert calls[0][1] == "/documents"
+    body = calls[0][2]
+    assert body == {"path": "kb/a.md", "content": "# Alpha\n\nbody", "title": "Alpha"}
+    assert "node_id" not in body
+    assert not result.is_error
+    assert "已创建文档 [1] Alpha" in result.content[0].text
+
+
+async def test_create_document_without_title_omits_key(monkeypatch):
+    calls = _patch_hub_write(monkeypatch, [_FakeResponse(200, _hit_doc())])
+
+    await _create_document("kb/a.md", "# Alpha")
+
+    assert "title" not in calls[0][2]
+
+
+async def test_create_document_conflict_text(monkeypatch):
+    """409 → 业务性冲突文本(非基础设施错误),提示改用 update_document."""
+    _patch_hub_write(monkeypatch, [_FakeResponse(409, {"detail": "exists"})])
+
+    result = await _create_document("kb/a.md", "# A")
+
+    assert not result.is_error
+    assert "路径已存在" in result.content[0].text
+    assert "update_document" in result.content[0].text
+
+
+async def test_create_document_forbidden_text(monkeypatch):
+    """403 → 越权文本."""
+    _patch_hub_write(monkeypatch, [_FakeResponse(403, {"detail": "forbidden"})])
+
+    result = await _create_document("kb/a.md", "# A")
+
+    assert not result.is_error
+    assert "无权写入" in result.content[0].text
+
+
+async def test_update_document_forwards(monkeypatch):
+    """update → PUT /documents/{id};body 仅 content."""
+    calls = _patch_hub_write(monkeypatch, [_FakeResponse(200, _hit_doc())])
+
+    result = await _update_document(1, "# Alpha v2")
+
+    assert calls[0] == ("PUT", "/documents/1", {"content": "# Alpha v2"})
+    assert not result.is_error
+    assert "已更新文档 [1] Alpha" in result.content[0].text
+
+
+async def test_update_document_not_found_text(monkeypatch):
+    _patch_hub_write(monkeypatch, [_FakeResponse(404, {"detail": "Document not found"})])
+
+    result = await _update_document(999, "x")
+
+    assert not result.is_error
+    assert "文档 ID 999 不存在。" == result.content[0].text
+
+
+async def test_update_document_forbidden_text(monkeypatch):
+    _patch_hub_write(monkeypatch, [_FakeResponse(403, {"detail": "forbidden"})])
+
+    result = await _update_document(1, "x")
+
+    assert not result.is_error
+    assert "无权修改该文档" in result.content[0].text
+
+
+async def test_write_hub_unreachable_maps_to_error(monkeypatch):
+    """写通道连接失败 → isError + 可操作文本,进程不崩溃."""
+    _patch_hub_write(monkeypatch, [httpx.ConnectError("conn refused")])
+
+    for call in (
+        lambda: _create_document("kb/a.md", "# A"),
+        lambda: _update_document(1, "x"),
+    ):
+        result = await call()
+        assert result.is_error
+        assert "无法连接 Hub" in result.content[0].text
+
+
+async def test_write_unauthorized_maps_to_relogin_hint(monkeypatch):
+    _patch_hub_write(monkeypatch, [_FakeResponse(401, {"detail": "Invalid token"})])
+
+    result = await _update_document(1, "x")
+
+    assert result.is_error
+    assert "凭证已失效" in result.content[0].text
+    assert "akm-node login" in result.content[0].text
+
+
+async def test_write_timeout_maps_to_retry_hint(monkeypatch):
+    _patch_hub_write(monkeypatch, [httpx.ReadTimeout("timed out")])
+
+    result = await _create_document("kb/a.md", "# A")
+
+    assert result.is_error
+    assert "超时" in result.content[0].text
+
+
+async def test_write_hub_500_maps_to_error(monkeypatch):
+    _patch_hub_write(monkeypatch, [_FakeResponse(500, text="internal error")])
+
+    result = await _create_document("kb/a.md", "# A")
+
+    assert result.is_error
+    assert "Hub 返回错误(500)" in result.content[0].text
+
+
+# ---- 写回工具:分发与缺参数 ----
+
+async def test_handle_call_tool_dispatches_create(monkeypatch):
+    _patch_hub_write(monkeypatch, [_FakeResponse(200, _hit_doc())])
+
+    from app.mcp_proxy import handle_call_tool
+
+    result = await handle_call_tool(
+        None,
+        types.CallToolRequestParams(
+            name="create_document", arguments={"path": "kb/a.md", "content": "# A"}
+        ),
+    )
+
+    assert "已创建文档" in result.content[0].text
+
+
+async def test_handle_call_tool_missing_param(monkeypatch):
+    """缺必填参数 → "缺少参数: <名称>",不崩溃."""
+    from app.mcp_proxy import handle_call_tool
+
+    result = await handle_call_tool(
+        None,
+        types.CallToolRequestParams(name="update_document", arguments={"content": "x"}),
+    )
+
+    assert result.is_error
+    assert "缺少参数: document_id" in result.content[0].text
+
+
+def test_tools_expose_write_tools():
+    """工具清单含写工具,且与 Hub 同名同参(五工具)."""
+    from app.mcp_proxy import TOOLS
+
+    names = [t.name for t in TOOLS]
+    assert names == [
+        "search_documents",
+        "get_document",
+        "list_documents",
+        "create_document",
+        "update_document",
+    ]
+    schemas = {t.name: t.model_dump(by_alias=True)["inputSchema"] for t in TOOLS}
+    assert set(schemas["create_document"]["required"]) == {"path", "content"}
+    assert set(schemas["update_document"]["required"]) == {"document_id", "content"}

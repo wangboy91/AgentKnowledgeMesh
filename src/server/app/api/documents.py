@@ -3,8 +3,6 @@
 提供文档列表、详情、扫描等接口。
 """
 
-import hashlib
-from pathlib import Path
 from pydantic import BaseModel
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -25,7 +23,7 @@ class DocumentUpdate(BaseModel):
 
 class DocumentCreate(BaseModel):
     path: str
-    title: str
+    title: str = ""  # 缺省/为空时由写入口径从内容首行 # 或路径文件名提取
     content: str
 
 
@@ -180,53 +178,26 @@ async def update_document(
     doc_id: int,
     update: DocumentUpdate,
     background_tasks: BackgroundTasks,
-    principal=Depends(require_auth("admin")),
+    principal=Depends(require_auth("admin", node_write=True)),
     session: AsyncSession = Depends(get_session),
 ):
-    """更新文档内容."""
+    """更新文档内容(admin 或节点凭证;节点仅能更新本节点名下的文档)."""
+    from app.services.document_writer import update_document as _write_update
+    from app.services.rag.sync import sync_index_and_mark
+
     doc = await session.get(Document, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # 更新内容和 hash
-    doc.content = update.content
-    doc.hash = hashlib.sha256(update.content.encode("utf-8")).hexdigest()
-    doc.size = len(update.content.encode("utf-8"))
+    # 节点凭证作用域:只能写自己名下的文档(鉴权依赖拿不到目标文档,归属判定在此)
+    if principal.kind == "node" and doc.node_id != principal.node_id:
+        raise HTTPException(status_code=403, detail="无权修改该文档:不属于本节点")
 
-    # 提取标题（如果有 # 开头的行）
-    for line in update.content.split("\n")[:5]:
-        line = line.strip()
-        if line.startswith("# "):
-            doc.title = line[2:].strip()
-            break
+    doc = await _write_update(session, doc, update.content)
 
-    # 按「向量化总开关 + RAG 模式」设定状态:仅二者同时满足才入向量
-    from app.services.rag.sync import (
-        get_rag_mode,
-        get_vectorization_enabled,
-        resolve_rag_status,
-        should_auto_index,
-        sync_index_and_mark,
-    )
-
-    rag_mode = await get_rag_mode(session)
-    vectorization_enabled = await get_vectorization_enabled(session)
-    doc.rag_status = resolve_rag_status(doc.rag_status, rag_mode, vectorization_enabled)
-    await session.commit()
-    # 服务端生成列(created_at/updated_at)在写入后可能被过期,显式 refresh 才能安全序列化
-    await session.refresh(doc)
-
-    # 向量索引(仅「总开关开启 + auto」;后台统一通道,失败仅告警不影响主流程)
-    if should_auto_index(rag_mode, vectorization_enabled) and doc.rag_status != "excluded":
-        background_tasks.add_task(sync_index_and_mark, [
-            {
-                "doc_id": doc.id,
-                "title": doc.title,
-                "path": doc.path,
-                "content": doc.content,
-                "node_id": doc.node_id,
-            }
-        ], [])
+    # 向量索引(仅「总开关开启 + auto」且未 excluded 时 rag_status 为 indexed;后台通道,失败仅告警)
+    if doc.rag_status == "indexed":
+        background_tasks.add_task(sync_index_and_mark, [_upsert_payload(doc)], [])
 
     return doc.to_dict(include_content=True)
 
@@ -235,81 +206,43 @@ async def update_document(
 async def create_document(
     create: DocumentCreate,
     background_tasks: BackgroundTasks,
-    principal=Depends(require_auth("admin")),
+    principal=Depends(require_auth("admin", node_write=True)),
     session: AsyncSession = Depends(get_session),
 ):
-    """创建新文档."""
-    # 检查路径是否已存在
-    existing = await session.execute(
-        select(Document).where(Document.path == create.path)
-    )
-    if existing.scalar_one_or_none():
+    """创建新文档(admin 或节点凭证).
+
+    归属由凭证决定:节点凭证强制归属本节点(不接受请求体指定),其余归属 `local`。
+    唯一性以 `(node_id, path)` 判定,同归属路径重复返回 409。
+    """
+    from app.services.document_writer import PathConflict
+    from app.services.document_writer import create_document as _write_create
+    from app.services.rag.sync import sync_index_and_mark
+
+    node_id = principal.node_id if principal.kind == "node" else "local"
+
+    try:
+        doc = await _write_create(
+            session,
+            node_id=node_id,
+            path=create.path,
+            content=create.content,
+            title=create.title,
+        )
+    except PathConflict:
         raise HTTPException(status_code=409, detail="Document already exists at this path")
 
-    # 创建文档
-    content_hash = hashlib.sha256(create.content.encode("utf-8")).hexdigest()
-
-    # 如果没有标题，从内容提取
-    title = create.title
-    if not title:
-        for line in create.content.split("\n")[:5]:
-            line = line.strip()
-            if line.startswith("# "):
-                title = line[2:].strip()
-                break
-        if not title:
-            title = Path(create.path).stem
-
-    doc = Document(
-        path=create.path,
-        title=title,
-        hash=content_hash,
-        size=len(create.content.encode("utf-8")),
-        content=create.content,
-    )
-
-    session.add(doc)
-    # 按「向量化总开关 + RAG 模式」设定状态:仅二者同时满足才入向量
-    from app.services.rag.sync import (
-        get_rag_mode,
-        get_vectorization_enabled,
-        resolve_rag_status,
-        should_auto_index,
-        sync_index_and_mark,
-    )
-
-    rag_mode = await get_rag_mode(session)
-    vectorization_enabled = await get_vectorization_enabled(session)
-    doc.rag_status = resolve_rag_status(doc.rag_status, rag_mode, vectorization_enabled)
-    await session.commit()
-    # 服务端生成列(created_at/updated_at)在写入后可能被过期,显式 refresh 才能安全序列化
-    await session.refresh(doc)
-
-    # 向量索引(仅「总开关开启 + auto」;后台统一通道,失败仅告警不影响主流程)
-    if should_auto_index(rag_mode, vectorization_enabled) and doc.rag_status != "excluded":
-        background_tasks.add_task(sync_index_and_mark, [
-            {
-                "doc_id": doc.id,
-                "title": doc.title,
-                "path": doc.path,
-                "content": doc.content,
-                "node_id": doc.node_id,
-            }
-        ], [])
+    # 向量索引(仅「总开关开启 + auto」时 rag_status 为 indexed;后台通道,失败仅告警)
+    if doc.rag_status == "indexed":
+        background_tasks.add_task(sync_index_and_mark, [_upsert_payload(doc)], [])
 
     return doc.to_dict(include_content=True)
 
 
 def _upsert_payload(doc: Document, pending: bool = False) -> dict:
-    """构造后台索引载荷(勾选流程用)."""
-    return {
-        "doc_id": doc.id,
-        "title": doc.title,
-        "path": doc.path,
-        "content": doc.content,
-        "node_id": doc.node_id,
-        "pending": pending,
-    }
+    """构造后台索引载荷(单源见 services/document_writer.upsert_payload)."""
+    from app.services.document_writer import upsert_payload
+
+    return upsert_payload(doc, pending)
 
 
 def _rag_upserts(docs, pending: bool = False) -> list[dict]:

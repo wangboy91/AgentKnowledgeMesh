@@ -6,7 +6,14 @@
 - search_documents: 搜索文档
 - get_document: 获取文档详情
 - list_documents: 列出文档
+- create_document: 新建文档(智能体写回)
+- update_document: 覆盖更新文档正文(智能体写回)
+
+写工具的归属固定为 `local`(Hub 本机信任形态);节点凭证的写回经节点本地
+代理走 REST(见 `app/api/documents.py`),由服务端依据节点凭证强制作用域。
 """
+
+import asyncio
 
 import mcp.types as types
 from mcp.server import Server
@@ -14,14 +21,29 @@ from mcp.server.stdio import stdio_server
 from sqlalchemy import select, or_
 
 from akm_shared.mcp_formatting import (
+    format_document_created,
     format_document_detail,
     format_document_list,
+    format_document_updated,
     format_search_results,
     format_semantic_search,
 )
 
 from app.db import async_session
 from app.models.document import Document
+from app.services.document_writer import upsert_payload as _upsert_payload
+
+# 后台向量维护任务的强引用集合:asyncio 不持有 task 的强引用,不保留会被 GC 回收
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_index(upserts: list[dict]) -> None:
+    """后台派发向量维护(失败仅告警,不影响工具响应)."""
+    from app.services.rag.sync import sync_index_and_mark
+
+    task = asyncio.create_task(sync_index_and_mark(upserts, []))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 async def handle_list_tools(ctx, params) -> types.ListToolsResult:
@@ -83,6 +105,46 @@ async def handle_list_tools(ctx, params) -> types.ListToolsResult:
                     }
                 }
             }
+        ),
+        types.Tool(
+            name="create_document",
+            description="在知识库中新建一篇 Markdown 文档。路径已存在时返回冲突错误，此时应改用 update_document。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "文档相对路径，如 notes/foo.md"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Markdown 全文"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "标题（可选；缺省或为空时从内容首行 # 或路径文件名提取）"
+                    }
+                },
+                "required": ["path", "content"]
+            }
+        ),
+        types.Tool(
+            name="update_document",
+            description="覆盖更新已有文档的正文。文档 ID 可由 search_documents / list_documents 获得；文档不存在时返回错误。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "document_id": {
+                        "type": "integer",
+                        "description": "文档 ID"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "新的 Markdown 全文"
+                    }
+                },
+                "required": ["document_id", "content"]
+            }
         )
     ])
 
@@ -92,23 +154,39 @@ async def handle_call_tool(ctx, params: types.CallToolRequest) -> types.CallTool
     name = params.name
     arguments = params.arguments or {}
 
-    if name == "search_documents":
-        return await _search_documents(
-            query=arguments["query"],
-            limit=arguments.get("limit", 5),
-            mode=arguments.get("mode", "keyword"),
-        )
-    elif name == "get_document":
-        return await _get_document(
-            document_id=arguments["document_id"]
-        )
-    elif name == "list_documents":
-        return await _list_documents(
-            node_id=arguments.get("node_id"),
-            limit=arguments.get("limit", 20)
-        )
-    else:
-        raise ValueError(f"Unknown tool: {name}")
+    try:
+        if name == "search_documents":
+            return await _search_documents(
+                query=arguments["query"],
+                limit=arguments.get("limit", 5),
+                mode=arguments.get("mode", "keyword"),
+            )
+        elif name == "get_document":
+            return await _get_document(
+                document_id=arguments["document_id"]
+            )
+        elif name == "list_documents":
+            return await _list_documents(
+                node_id=arguments.get("node_id"),
+                limit=arguments.get("limit", 20)
+            )
+        elif name == "create_document":
+            return await _create_document(
+                path=arguments["path"],
+                content=arguments["content"],
+                title=arguments.get("title"),
+            )
+        elif name == "update_document":
+            return await _update_document(
+                document_id=arguments["document_id"],
+                content=arguments["content"],
+            )
+        else:
+            raise ValueError(f"Unknown tool: {name}")
+    except KeyError as e:
+        return types.CallToolResult(content=[
+            types.TextContent(type="text", text=f"缺少参数: {e.args[0]}")
+        ], isError=True)
 
 
 async def _search_documents(query: str, limit: int, mode: str = "keyword") -> types.CallToolResult:
@@ -215,6 +293,57 @@ async def _list_documents(node_id: str | None, limit: int) -> types.CallToolResu
     docs = [doc.to_dict(include_content=False) for doc in documents]
     return types.CallToolResult(content=[
         types.TextContent(type="text", text=format_document_list(docs))
+    ])
+
+
+async def _create_document(path: str, content: str, title: str | None = None) -> types.CallToolResult:
+    """新建文档(归属 `local`;与 REST `POST /api/documents` 同一写入口径)."""
+    from app.services.document_writer import PathConflict
+    from app.services.document_writer import create_document as write_create
+
+    async with async_session() as session:
+        try:
+            doc = await write_create(
+                session, node_id="local", path=path, content=content, title=title
+            )
+        except PathConflict:
+            existing = await session.execute(
+                select(Document).where(Document.node_id == "local", Document.path == path)
+            )
+            hit = existing.scalar_one_or_none()
+            hint = f"(文档 ID {hit.id})" if hit else ""
+            return types.CallToolResult(content=[types.TextContent(
+                type="text",
+                text=f"路径已存在:{path}{hint},请改用 update_document。",
+            )])
+        payload = doc.to_dict()
+        upsert = _upsert_payload(doc) if doc.rag_status == "indexed" else None
+
+    if upsert:
+        _spawn_index([upsert])
+    return types.CallToolResult(content=[
+        types.TextContent(type="text", text=format_document_created(payload))
+    ])
+
+
+async def _update_document(document_id: int, content: str) -> types.CallToolResult:
+    """覆盖更新文档正文(与 REST `PUT /api/documents/{id}` 同一写入口径)."""
+    from app.services.document_writer import update_document as write_update
+
+    async with async_session() as session:
+        doc = await session.get(Document, document_id)
+        if doc is None:
+            return types.CallToolResult(content=[types.TextContent(
+                type="text", text=f"文档 ID {document_id} 不存在。"
+            )])
+        doc = await write_update(session, doc, content)
+        payload = doc.to_dict()
+        upsert = _upsert_payload(doc) if doc.rag_status == "indexed" else None
+
+    if upsert:
+        _spawn_index([upsert])
+    return types.CallToolResult(content=[
+        types.TextContent(type="text", text=format_document_updated(payload))
     ])
 
 
