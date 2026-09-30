@@ -177,6 +177,10 @@ async def _sync_node_documents(
     返回 (同步统计, 向量操作载荷)；载荷在 commit 前捕获所需数据
     （新增文档 flush 取 id、待删文档删除前取 id），供响应后派发后台向量维护。
 
+    内容来源为 `agent` 的文档(内容已由 Hub/智能体改写)对节点同步免疫:命中该
+    路径的条目一律跳过并计入 `skipped`,既不覆盖也不计入 `rejected`;`deletions`
+    与隐式缺失推导也不删除这类文档(见 `document-persistence`)。
+
     路径归一化:无论节点端(旧版 Windows 扫描)推送 "/" 还是 "\\" 分隔符,
     统一以 "/" 入库——hub 端 URL/树/查找均以此为准,避免跨端路径不一致。
     """
@@ -189,7 +193,7 @@ async def _sync_node_documents(
     )
     existing = {norm(doc.path): doc for doc in result.scalars().all()}
 
-    stats = {"created": 0, "updated": 0, "deleted": 0, "rejected": []}
+    stats = {"created": 0, "updated": 0, "deleted": 0, "rejected": [], "skipped": []}
     changed: list[Document] = []
     created_this_batch: set[str] = set()  # 同批内新增路径去重(归一化后可能碰撞)
 
@@ -198,6 +202,13 @@ async def _sync_node_documents(
         if not path:
             continue
         old_doc = existing.get(path)
+        if old_doc is not None and old_doc.origin == "agent":
+            # 该文档内容由 Hub/智能体写入(agent 来源),磁盘文件不再是权威:
+            # 既不覆盖、也不计入 rejected —— 计入 rejected 会让节点把该路径移出
+            # 本地快照、下轮带全文重传、再被拒,形成永不收敛的重传循环。
+            # 计入 skipped 后节点视其为"未被拒",快照保留本地 hash,稳态无重传。
+            stats["skipped"].append({"path": path, "reason": "agent origin"})
+            continue
         if doc.content is None:
             # hash-first:无全文条目仅在库中哈希一致时跳过,否则拒绝等待下轮重传
             if old_doc is not None and old_doc.hash == doc.hash:
@@ -214,6 +225,8 @@ async def _sync_node_documents(
                 size=doc.size,
                 content=doc.content,
                 rag_status=initial_rag_status(rag_mode, vectorization_enabled),
+                # 节点上传的内容派生自该节点的磁盘文件,磁盘仍是权威(见 document-persistence)
+                origin="file",
             )
             session.add(new_doc)
             created_this_batch.add(path)
@@ -238,6 +251,9 @@ async def _sync_node_documents(
     if implicit_delete:
         # 旧版全量推送兼容:列表缺失即删除
         to_delete |= set(existing.keys()) - scanned_paths
+    # agent 来源的文档不参与文件来源的删除推导:显式 deletions 与隐式缺失都是
+    # 文件系统事件的产物,而这类文档的内容已不来自文件(见 document-persistence D6)
+    to_delete = {p for p in to_delete if existing[p].origin != "agent"}
     if to_delete:
         deleted_ids = [existing[p].id for p in to_delete]
         await session.execute(

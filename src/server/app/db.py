@@ -43,10 +43,13 @@ _COLUMN_MIGRATIONS = {
     "postgresql": [
         ("nodes", "disabled", "ALTER TABLE nodes ADD COLUMN disabled BOOLEAN NOT NULL DEFAULT FALSE"),
         ("documents", "rag_status", "ALTER TABLE documents ADD COLUMN rag_status VARCHAR(16) NOT NULL DEFAULT 'indexed'"),
+        # 存量行一律标 file:它们全部由扫描或节点上传产生,与迁移前行为一致
+        ("documents", "origin", "ALTER TABLE documents ADD COLUMN origin VARCHAR(8) NOT NULL DEFAULT 'file'"),
     ],
     "sqlite": [
         ("nodes", "disabled", "ALTER TABLE nodes ADD COLUMN disabled BOOLEAN NOT NULL DEFAULT 0"),
         ("documents", "rag_status", "ALTER TABLE documents ADD COLUMN rag_status VARCHAR(16) NOT NULL DEFAULT 'indexed'"),
+        ("documents", "origin", "ALTER TABLE documents ADD COLUMN origin VARCHAR(8) NOT NULL DEFAULT 'file'"),
     ],
 }
 

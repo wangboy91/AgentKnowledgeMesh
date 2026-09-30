@@ -162,6 +162,8 @@ docker compose -f deploy/docker-compose.node.yml up -d --build
 
 **智能体写回**:`create_document(path, content, title?)` 新建、`update_document(document_id, content)` 覆盖更新。经节点代理写入时,文档归属该节点(`node_id` 由 Hub 依节点凭证强制,代理无法指定),且只能更新本节点名下的文档(跨节点 403);经 Hub stdio/SSE 写入时归属 `local`。路径唯一性按 `(node_id, path)` 判定——不同机器的同名路径可共存。写回内容立即进入检索与多机分发,其他电脑的智能体随即检索得到。写回**不落本地磁盘**(文档只存在于 Hub),也不会删除任何文档。详见 [docs/agent-write-back-design.md](docs/agent-write-back-design.md)。
 
+> **写回是持久的**(2026-09-30 起):经 Hub 写入或编辑过的文档,内容来源标记为 `agent`,**不再被磁盘文件覆盖或删除**——此前"改完过几分钟又变回去"的问题已修复。代价是这类文档的内容以 Hub 为准:对应磁盘文件从此无法再更新它,且目前没有文档删除入口。文件扫描派生(未改写过)的文档行为不变,仍随磁盘新增/修改/删除。
+
 远程/无节点机器用 Hub:SSE 模式 `"url": "http://localhost:8000/api/mcp/sse"`(需在 Web「设置」页创建 API Token),或 Hub 本机 stdio 模式 `"command": "uv", "args": ["run", "akm-hub", "--mcp"]`。三种接入形态工具集与返回格式完全一致。测试:`npx @modelcontextprotocol/inspector http://localhost:8000/api/mcp/sse`。
 
 - **Agent 检索接口**:`GET /api/context?q=xxx`(需 API Token)

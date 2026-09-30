@@ -103,6 +103,8 @@ Hub SHALL 通过内存中的连接管理器跟踪在线节点；连接断开时�
 ### Requirement: Node Document Upload
 Node SHALL 在扫描本地知识库后,与本地同步快照(上次确认同步成功的 path → hash 集合)比对,按差异分类推送:新增或哈希变更的文档上传**含全文**,未变更的文档仅上报 `{path, hash}`(不含 content),快照中存在而本轮扫描缺失的路径列入 `deletions`;推送通过 HTTP 携带节点令牌完成,触发时机为:初始连接成功后、收到 `sync_request` 时、本地文件变更事件经防抖聚合后,以及定时对账到点时(后两者见 `Node File Change Watch`)。SHALL 仅在收到 Hub 成功响应(200)后更新本地快照;失败时快照不变,等待下次触发重试。
 
+当单轮推送的总体积或条目数超过配置上限时,Node MUST 将 payload **切分为多个请求串行发送**,而非单次全量提交:单请求的文档条目数 MUST 不超过 `AKM_UPLOAD_BATCH_DOCS`(默认 50),单请求的 JSON 体积 SHOULD 不超过 `AKM_UPLOAD_BATCH_BYTES`(默认 512 KiB);两者任一触顶即封批。单篇文档自身超过体积上限时 MUST 独占一批发送(不得因其过大而放弃推送)。`deletions` MUST 仅随**最后一批**发送,且每一批的 payload MUST 都携带 `deletions` 键(可为空列表),以关闭 Hub 侧"列表缺失即删除"的隐式推导。分批 MUST NOT 削弱原子性:任一批次失败(网络错误或非 200 响应)时,本轮 MUST 视为整体失败,本地快照 MUST NOT 被更新,已成功批次的入库结果保留(重传幂等)。Hub 响应中的 `rejected` 与 `created` / `updated` / `deleted` 统计 MUST 跨批汇总后再用于快照决策与日志输出。当未触发任何上限时(单批即可容纳),请求数量与 payload 结构 MUST 与未分批时一致。
+
 #### Scenario: 初始连接后上传
 - **WHEN** Node 成功注册到 Hub 且本地无快照(首次)
 - **THEN** Node 上传全部文档(含全文),成功后将扫描结果写入快照
@@ -135,8 +137,24 @@ Node SHALL 在扫描本地知识库后,与本地同步快照(上次确认同步�
 - **WHEN** Node 携带的令牌无效(Hub 返回 401)
 - **THEN** Node 记录错误日志,不中断 WebSocket 连接,等待下一次同步触发重试
 
+#### Scenario: 超量文档切分为多批
+- **WHEN** 单轮待推送的文档条目数超过 `AKM_UPLOAD_BATCH_DOCS`,或累计 JSON 体积超过 `AKM_UPLOAD_BATCH_BYTES`
+- **THEN** Node 将其切分为多个 `PUT /api/nodes/{id}/documents` 请求串行发送,每个请求的条目数与体积均不超过对应上限,且各批文档条目合计等于本轮全部待推送文档(不重不漏)
+
+#### Scenario: deletions 仅随最后一批
+- **WHEN** 本轮推送因超限被切分为多批,且本轮存在待删除路径
+- **THEN** 前序各批的 payload 携带空的 `deletions` 列表,待删除路径仅出现在最后一批的 `deletions` 中,Hub 最终删除结果与单批推送一致
+
+#### Scenario: 单篇超限独占一批
+- **WHEN** 某篇文档的单个条目体积即超过 `AKM_UPLOAD_BATCH_BYTES`
+- **THEN** 该文档单独作为一个请求发送,不被跳过、不阻塞本轮其余文档的推送
+
+#### Scenario: 分批过程中的批次失败不更新快照
+- **WHEN** 多批推送过程中某一批返回非 200 响应或发生网络错误
+- **THEN** Node 停止后续批次,记录失败信息,且本轮**不更新**本地快照;下轮触发时按相同差异重新推送,Hub 侧已入库的批次因幂等而不产生重复数据
+
 ### Requirement: Hub Node Document Ingestion
-Hub SHALL 提供 `PUT /api/nodes/{node_id}/documents` 端点,接收节点推送的差异列表,按 `(node_id, path)` 作用域增量入库:携带 `content` 的条目按 SHA256 哈希比对插入或更新;未携带 `content` 且库中哈希一致的条目忽略;未携带 `content` 且库中哈希不一致或路径不存在的条目计入响应的 `rejected`(含 path 与原因),不计入失败响应;请求的 `deletions` 列表 SHALL 删除对应文档;响应 SHALL 返回 `{created, updated, deleted, rejected}` 统计。入库的同时 SHALL 维护向量索引:created/updated 的文档在后台生成向量,deleted 与 rejected 外的文档删除时清理其向量;向量操作失败 SHALL 仅记录告警、不影响同步响应。
+Hub SHALL 提供 `PUT /api/nodes/{node_id}/documents` 端点,接收节点推送的差异列表,按 `(node_id, path)` 作用域增量入库:携带 `content` 的条目按 SHA256 哈希比对插入或更新;未携带 `content` 且库中哈希一致的条目忽略;未携带 `content` 且库中哈希不一致或路径不存在的条目计入响应的 `rejected`(含 path 与原因),不计入失败响应;请求的 `deletions` 列表 SHALL 删除对应文档;响应 SHALL 返回 `{created, updated, deleted, rejected, skipped}` 统计。**内容来源(`origin`)为 `agent` 的文档 SHALL 对节点同步免疫:推送列表中命中该路径的条目 SHALL 被跳过——既不覆盖其内容、亦 SHALL NOT 计入 `rejected`(计入 rejected 会使节点将该路径移出本地快照、每轮携带全文重传而永不收敛),该情况 SHALL 计入响应的 `skipped`(含 path 与原因);`deletions` 列表与旧版协议的隐式缺失推导 SHALL NOT 删除 `agent` 来源的文档。** 入库的同时 SHALL 维护向量索引:created/updated 的文档在后台生成向量,deleted 与 rejected 外的文档删除时清理其向量;向量操作失败 SHALL 仅记录告警、不影响同步响应。
 
 #### Scenario: 新增与更新文档
 - **WHEN** 推送列表中包含该节点名下不存在或哈希已变且携带 content 的路径
@@ -181,6 +199,18 @@ Hub SHALL 提供 `PUT /api/nodes/{node_id}/documents` 端点,接收节点推送�
 #### Scenario: 未鉴权或节点不存在
 - **WHEN** 请求未携带有效令牌,或 `node_id` 不存在
 - **THEN** Hub 返回 401(令牌无效)或 404(节点不存在)
+
+#### Scenario: agent 来源文档不被节点同步覆盖
+- **WHEN** 该节点名下某文档 `origin` 为 `agent`(内容已由 Hub/智能体改写),节点推送该路径的条目——无论携带全文、或未携带全文且哈希不一致
+- **THEN** Hub 保留该文档现有内容不变,该条目计入 `skipped`(原因标明来源为 agent)且 SHALL NOT 计入 `rejected`;响应中该路径不出现在 `rejected` 内,故节点不会在下一轮携带全文重传
+
+#### Scenario: agent 来源文档不被删除推导删除
+- **WHEN** 该节点名下某文档 `origin` 为 `agent`,请求的 `deletions` 列表包含该路径,或旧版全量推送的列表缺少该路径
+- **THEN** Hub 保留该文档,`deleted` 不增加,且不清理其向量分块
+
+#### Scenario: file 来源文档仍由节点同步维护
+- **WHEN** 该节点名下某文档 `origin` 为 `file`,节点推送该路径且携带与库中不同的全文
+- **THEN** Hub 按既有语义更新其内容并计入 `updated`,`origin` 保持 `file`
 
 ### Requirement: Node Token Issuance
 节点令牌 SHALL 由 CLI 登录流颁发:节点机以管理员凭证调用 `POST /api/nodes/register`(见 account-auth 能力),Hub 创建或更新节点记录并**轮换生成**新令牌返回;此后 WS `register_ack` 返回该已存令牌用于确认。节点文档入库端点 SHALL 强制校验令牌;令牌的重置与禁用由 account-auth 能力定义。

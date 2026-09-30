@@ -151,7 +151,7 @@ async def test_put_documents_create(db, client):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"created": 1, "updated": 0, "deleted": 0, "rejected": []}
+    assert resp.json() == {"created": 1, "updated": 0, "deleted": 0, "rejected": [], "skipped": []}
 
     docs = await _count_docs(db, node_id)
     assert len(docs) == 1
@@ -170,7 +170,7 @@ async def test_put_documents_update(db, client):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"created": 0, "updated": 1, "deleted": 0, "rejected": []}
+    assert resp.json() == {"created": 0, "updated": 1, "deleted": 0, "rejected": [], "skipped": []}
 
     docs = await _count_docs(db, node_id)
     assert len(docs) == 1
@@ -190,7 +190,7 @@ async def test_put_documents_delete(db, client):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"created": 0, "updated": 0, "deleted": 1, "rejected": []}
+    assert resp.json() == {"created": 0, "updated": 0, "deleted": 1, "rejected": [], "skipped": []}
 
     docs = await _count_docs(db, node_id)
     assert {d.path for d in docs} == {"a.md"}
@@ -258,7 +258,7 @@ async def test_put_documents_dispatches_vector_upsert(db, client, stub_vector_st
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"created": 1, "updated": 1, "deleted": 0, "rejected": []}
+    assert resp.json() == {"created": 1, "updated": 1, "deleted": 0, "rejected": [], "skipped": []}
 
     # 后台任务在响应周期内执行（ASGITransport 等待完整 ASGI 调用）
     added = {a["path"] for a in stub_vector_store["add"]}
@@ -283,7 +283,7 @@ async def test_put_documents_dispatches_vector_delete(db, client, stub_vector_st
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"created": 0, "updated": 0, "deleted": 1, "rejected": []}
+    assert resp.json() == {"created": 0, "updated": 0, "deleted": 1, "rejected": [], "skipped": []}
 
     assert stub_vector_store["delete"] == [gone_id]
     assert stub_vector_store["add"] == []
@@ -301,7 +301,7 @@ async def test_put_documents_no_changes_no_dispatch(db, client, stub_vector_stor
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": []}
+    assert resp.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": [], "skipped": []}
 
     assert stub_vector_store["add"] == []
     assert stub_vector_store["delete"] == []
@@ -322,6 +322,7 @@ async def test_put_documents_hash_only_mismatch_rejected(db, client, stub_vector
     assert resp.json() == {
         "created": 0, "updated": 0, "deleted": 0,
         "rejected": [{"path": "a.md", "reason": "hash mismatch"}],
+        "skipped": [],
     }
 
     docs = await _count_docs(db, node_id)
@@ -346,6 +347,7 @@ async def test_put_documents_hash_only_missing_path_rejected(db, client, stub_ve
     assert resp.json() == {
         "created": 0, "updated": 0, "deleted": 0,
         "rejected": [{"path": "ghost.md", "reason": "path not found"}],
+        "skipped": [],
     }
     assert await _count_docs(db, node_id) == []
 
@@ -362,7 +364,7 @@ async def test_put_documents_hash_only_unchanged_ignored(db, client, stub_vector
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": []}
+    assert resp.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": [], "skipped": []}
 
     docs = await _count_docs(db, node_id)
     assert len(docs) == 1
@@ -387,7 +389,7 @@ async def test_put_documents_deletions_field(db, client, stub_vector_store):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"created": 0, "updated": 0, "deleted": 1, "rejected": []}
+    assert resp.json() == {"created": 0, "updated": 0, "deleted": 1, "rejected": [], "skipped": []}
 
     assert {d.path for d in await _count_docs(db, node_id)} == {"a.md"}
     assert stub_vector_store["delete"] == [b_id]
@@ -408,7 +410,7 @@ async def test_put_documents_new_protocol_no_implicit_delete(db, client, stub_ve
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": []}
+    assert resp.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": [], "skipped": []}
 
     # b.md/c.md 未出现在 documents 且 deletions 为空 → 不删除
     assert {d.path for d in await _count_docs(db, node_id)} == {"a.md", "b.md", "c.md"}
@@ -429,7 +431,7 @@ async def test_put_documents_normalizes_backslash_paths(db, client, stub_vector_
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"created": 1, "updated": 0, "deleted": 0, "rejected": []}
+    assert resp.json() == {"created": 1, "updated": 0, "deleted": 0, "rejected": [], "skipped": []}
 
     docs = await _count_docs(db, node_id)
     assert len(docs) == 1
@@ -445,7 +447,7 @@ async def test_put_documents_normalizes_backslash_paths(db, client, stub_vector_
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp2.status_code == 200
-    assert resp2.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": []}
+    assert resp2.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": [], "skipped": []}
     assert len(await _count_docs(db, node_id)) == 1
     assert len(stub_vector_store["add"]) == 1  # hash-only 未新增嵌入
 
@@ -463,7 +465,7 @@ async def test_put_documents_backslash_dedup_and_delete(db, client, stub_vector_
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": []}
+    assert resp.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": [], "skipped": []}
 
     # deletions 用反斜杠路径也应命中归一化后的库中行
     docs = await _count_docs(db, node_id)
@@ -474,7 +476,7 @@ async def test_put_documents_backslash_dedup_and_delete(db, client, stub_vector_
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp2.status_code == 200
-    assert resp2.json() == {"created": 0, "updated": 0, "deleted": 1, "rejected": []}
+    assert resp2.json() == {"created": 0, "updated": 0, "deleted": 1, "rejected": [], "skipped": []}
     assert await _count_docs(db, node_id) == []
     assert stub_vector_store["delete"] == [a_id]
 
@@ -503,7 +505,7 @@ async def test_put_documents_rejected_retransmit_roundtrip(db, client, stub_vect
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp2.status_code == 200
-    assert resp2.json() == {"created": 0, "updated": 1, "deleted": 0, "rejected": []}
+    assert resp2.json() == {"created": 0, "updated": 1, "deleted": 0, "rejected": [], "skipped": []}
 
     docs = await _count_docs(db, node_id)
     assert len(docs) == 1
@@ -525,7 +527,7 @@ async def test_put_documents_deletions_scoped(db, client, stub_vector_store):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": []}
+    assert resp.json() == {"created": 0, "updated": 0, "deleted": 0, "rejected": [], "skipped": []}
 
     assert {d.path for d in await _count_docs(db, "local")} == {"local.md"}
     assert {d.path for d in await _count_docs(db, "node-2")} == {"other.md"}

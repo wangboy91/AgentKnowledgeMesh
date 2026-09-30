@@ -113,7 +113,7 @@ MCP Server SHALL 拒绝未知工具调用。
 - **THEN** 语义检索能力仅由 Hub 提供,节点代理不实现本地向量检索
 
 ### Requirement: Create Document Tool
-MCP Server SHALL 提供 `create_document` 工具,参数为必填 `path`、`content` 与可选 `title`,在知识库中新建一篇 Markdown 文档。**文档归属 SHALL 由调用者凭证决定:节点凭证写入的文档归属该节点(`node_id` 强制为该节点,不接受调用方指定),用户与 API Token 凭证写入的文档归属 `local`。** 路径唯一性 SHALL 以 `(node_id, path)` 判定;同节点下路径已存在时 SHALL 返回冲突错误并提示改用 `update_document`。成功时 SHALL 返回含 `id`、`title`、`path`、`node_id`、大小与更新时间的文本结果。
+MCP Server SHALL 提供 `create_document` 工具,参数为必填 `path`、`content` 与可选 `title`,在知识库中新建一篇 Markdown 文档。**文档归属 SHALL 由调用者凭证决定:节点凭证写入的文档归属该节点(`node_id` 强制为该节点,不接受调用方指定),用户与 API Token 凭证写入的文档归属 `local`。** 路径唯一性 SHALL 以 `(node_id, path)` 判定;同节点下路径已存在时 SHALL 返回冲突错误并提示改用 `update_document`。成功时 SHALL 返回含 `id`、`title`、`path`、`node_id`、大小与更新时间的文本结果。**该工具只写索引库、不落磁盘,故新建文档的内容来源(`origin`)SHALL 置为 `agent`——其内容以 Hub 库为准,SHALL NOT 受文件扫描或节点同步的覆盖与删除影响。**
 
 #### Scenario: 创建成功
 - **WHEN** Agent 调用 `create_document` 提交该归属下不冲突的 `path` 与 `content`
@@ -143,8 +143,12 @@ MCP Server SHALL 提供 `create_document` 工具,参数为必填 `path`、`conte
 - **WHEN** 调用未提供 `path` 或 `content`
 - **THEN** 工具返回 "缺少参数: <名称>" 类错误文本,不产生写入
 
+#### Scenario: 创建的文档标记为 agent 来源
+- **WHEN** Agent 调用 `create_document` 成功
+- **THEN** 新文档的 `origin` 为 `agent`,其路径在无对应磁盘文件的情况下 SHALL NOT 被 Hub 扫描删除
+
 ### Requirement: Update Document Tool
-MCP Server SHALL 提供 `update_document` 工具,参数为必填 `document_id` 与 `content`,覆盖更新已有文档正文。**以节点凭证调用时,SHALL 仅允许更新 `node_id` 等于该节点的文档,跨节点更新 SHALL 返回越权错误。** 文档不存在时 SHALL 返回"文档 ID <id> 不存在。"类提示。更新 SHALL 重算 SHA256 与字节大小,并在内容前 5 行存在 `# ` 标题时更新标题;用户显式 `excluded` 的文档 SHALL 保持 `excluded`。
+MCP Server SHALL 提供 `update_document` 工具,参数为必填 `document_id` 与 `content`,覆盖更新已有文档正文。**以节点凭证调用时,SHALL 仅允许更新 `node_id` 等于该节点的文档,跨节点更新 SHALL 返回越权错误。** 文档不存在时 SHALL 返回"文档 ID <id> 不存在。"类提示。更新 SHALL 重算 SHA256 与字节大小,并在内容前 5 行存在 `# ` 标题时更新标题;用户显式 `excluded` 的文档 SHALL 保持 `excluded`。**更新成功的文档,其内容来源(`origin`)SHALL 置为 `agent`——正文已由 Hub 改写、与磁盘文件不再一致,自此以 Hub 库为准,SHALL NOT 再被文件扫描或节点同步覆盖。**
 
 #### Scenario: 更新成功
 - **WHEN** Agent 调用 `update_document` 传入存在的文档 ID 与新正文
@@ -169,3 +173,7 @@ MCP Server SHALL 提供 `update_document` 工具,参数为必填 `document_id` �
 #### Scenario: 缺少必填参数
 - **WHEN** 调用未提供 `document_id` 或 `content`
 - **THEN** 工具返回 "缺少参数: <名称>" 类错误文本,不产生写入
+
+#### Scenario: 更新后转为 agent 来源
+- **WHEN** Agent 更新一篇原本 `origin` 为 `file` 的文档
+- **THEN** 更新后该文档 `origin` 为 `agent`,后续文件扫描与节点同步 SHALL NOT 覆盖其内容

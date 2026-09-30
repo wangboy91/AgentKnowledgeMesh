@@ -25,9 +25,15 @@
 | GET | `/api/documents` | 文档列表(支持 `node_id` / `rag_status` 过滤;🆕 `path` 精确匹配,组合 `node_id` 可唯一定位) |
 | GET | `/api/documents/tree?node_id=` | 文件树(🆕 `node_id` 按节点过滤;🆕 `dir` 目录切片:传目录路径(含空串=根)返回该目录**一层直接子项**供前端懒加载,缺省返回完整树;叶子节点携带 `id`) |
 | GET | `/api/documents/:id` | 文档详情(含内容) |
-| POST | `/api/documents/scan` | 触发本地扫描(admin) |
-| PUT | `/api/documents/:id` | 编辑文档(admin,或节点凭证且文档归属本节点) |
-| POST | `/api/documents` | 新建文档(admin,或节点凭证——归属强制为该节点;唯一性按 `(node_id, path)`) |
+| POST | `/api/documents/scan` | 触发本地扫描(admin);🆕 响应含 `skipped`(与 `agent` 来源文档同路径而被跳过的条目数) |
+| PUT | `/api/documents/:id` | 编辑文档(admin,或节点凭证且文档归属本节点);🆕 编辑后文档 `origin` 转为 `agent` |
+| POST | `/api/documents` | 新建文档(admin,或节点凭证——归属强制为该节点;唯一性按 `(node_id, path)`);🆕 新建文档 `origin` 为 `agent` |
+
+> **🆕 文档内容来源 `origin`**(`2026-09-30-fix-document-persistence`):文档对象新增 `origin` 字段,标识正文的权威来源。
+> `file`(默认)——内容由文件扫描派生(Hub 本机目录扫描、节点磁盘上传),磁盘是权威,可被扫描与节点同步覆盖、可因文件消失被删除;
+> `agent`——内容由 Hub/智能体写入(`POST /api/documents`、`PUT /api/documents/:id`、MCP `create_document` / `update_document`),无对应磁盘文件,
+> Hub 库是权威,**对一切文件来源事件免疫**(不被覆盖、不被删除)。编辑一篇 `file` 文档会把它转为 `agent`,该转换是单向的。
+> 详见 [known-issues.md](known-issues.md) 问题 1/2 的修复记录。
 
 ## 3. 检索与 RAG
 
@@ -110,10 +116,13 @@
   ],
   "deletions": ["c.md"]   // 显式删除列表;字段恒携带(可为空数组,是新协议标记)
 }
-// 响应:{"created": n, "updated": n, "deleted": n, "rejected": [{"path":"…","reason":"…"}]}
+// 响应:{"created": n, "updated": n, "deleted": n,
+//        "rejected": [{"path":"…","reason":"…"}],   // hash 不一致且无全文:等节点下轮重传
+//        "skipped":  [{"path":"…","reason":"agent origin"}]}  // 🆕 agent 来源文档:跳过且不重传
 ```
 
 - **入库规则**：带 `content` 的条目按 SHA256 哈希比对插入/更新（哈希未变不重复嵌入）；无 `content` 且库中哈希一致 → 忽略；无 `content` 且哈希不一致或路径不存在 → 计入 `rejected`（原因 `hash mismatch` / `path not found`），不入库。
 - **rejected 闭环**：节点把 rejected 条目视为未同步，下一轮自动携带全文重传。
+- **🆕 agent 来源免疫**：文档 `origin` 为 `agent` 时，命中该路径的条目一律计入 `skipped`（原因 `agent origin`）——既不覆盖、也**不计入 `rejected`**（计入 rejected 会让节点把该路径移出快照、每轮带全文重传而永不收敛）；`deletions` 与隐式缺失推导同样不删除这类文档。
 - **删除语义**：请求显式携带 `deletions` 字段（新协议）时按列表删除、不做隐式推导；字段缺省（旧版全量推送）时保留"列表缺失即删除"的兼容行为。
 - **幂等**：节点仅在收到 200 响应后更新本地快照（`<node>/data/sync_state.json`，path → hash）；失败不动快照，下轮按相同差异重试。

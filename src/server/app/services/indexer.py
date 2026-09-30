@@ -10,6 +10,11 @@
 - 新文件：INSERT +（仅总开关开启且 auto 时）向量化
 - hash 变化：UPDATE +（同上）向量化
 - 文件消失：DELETE + 尽力删除向量
+
+作用域（见 `document-persistence`）：
+- 只管理 `node_id="local"`，绝不因 Hub 扫描结果删改节点文档
+- 只管理 `origin="file"`（内容由文件扫描派生）的文档；`origin="agent"`（内容由
+  Hub/智能体写入）的文档既不覆盖也不删除，扫描命中同路径时跳过并计入 `skipped`
 """
 
 import json
@@ -30,7 +35,7 @@ async def sync_documents(
     rag_mode: str = "manual",
     vectorization_enabled: bool = False,
 ) -> dict:
-    """同步扫描结果到数据库(仅管理 hub 本机 node_id="local" 的文档).
+    """同步扫描结果到数据库(仅管理 hub 本机 node_id="local" 且 origin="file" 的文档).
 
     Args:
         session: 数据库会话
@@ -39,21 +44,40 @@ async def sync_documents(
         vectorization_enabled: 向量化总开关(关闭时一律不产生向量载荷)
 
     Returns:
-        同步统计 {created, updated, deleted} 及 vector_ops 载荷
+        同步统计 {created, updated, deleted, skipped} 及 vector_ops 载荷
         {upserts, deleted_ids},由调用方决定后台派发。
         初始 rag_status 由 initial_rag_status 统一决定:仅「总开关开启 +
         auto」为 indexed 并派发向量,其余为 not_indexed。
+
+    `origin="agent"` 的文档(由 REST / MCP 写入口径产生,无对应磁盘文件)不参与
+    本函数的任何推导:既不按 hash 覆盖、也不因"未扫描到"被删。扫描结果中出现
+    同路径时跳过并计入 `skipped`——这是"磁盘文件不得夺回已被智能体改写的文档"
+    在路径撞车时的表现,不是缺陷(见 `docs/known-issues.md` 问题 1/2)。
     """
     from app.services.rag.sync import resolve_rag_status, should_auto_index
 
-    # 只对 hub 本机目录(local)作用域操作,绝不因 hub 扫描结果删改节点文档
+    # 只对 hub 本机目录(local)且文件来源(file)的文档作用:origin="agent" 的
+    # 文档由写入口径拥有,扫描不得覆盖或删除(见模块 docstring)
     result = await session.execute(
-        select(Document).where(Document.node_id == "local")
+        select(Document).where(
+            Document.node_id == "local",
+            Document.origin == "file",
+        )
     )
     existing = {doc.path: doc for doc in result.scalars().all()}
 
+    # agent 来源的 local 路径集合:扫描命中同路径时跳过,既不覆盖也不新建
+    # (覆盖会夺回智能体改写的内容;新建会撞 (node_id, path) 唯一约束)
+    agent_rows = await session.execute(
+        select(Document.path).where(
+            Document.node_id == "local",
+            Document.origin == "agent",
+        )
+    )
+    agent_paths = {row[0] for row in agent_rows.all()}
+
     scanned_paths = {doc.path for doc in scanned}
-    stats = {"created": 0, "updated": 0, "deleted": 0}
+    stats = {"created": 0, "updated": 0, "deleted": 0, "skipped": 0}
     changed_paths: list[str] = []  # created/updated 的路径(入库取 id)
 
     rag_status = resolve_rag_status(None, rag_mode, vectorization_enabled)
@@ -61,6 +85,13 @@ async def sync_documents(
 
     # 处理扫描到的文档
     for doc in scanned:
+        if doc.path in agent_paths:
+            # 同路径已有 agent 来源文档:跳过,磁盘文件不得夺回其内容
+            logger.warning(
+                "扫描命中 agent 来源文档的同名路径,已跳过(保留库中内容):%s", doc.path
+            )
+            stats["skipped"] += 1
+            continue
         if doc.path in existing:
             # 已存在，检查 hash 是否变化
             old_doc = existing[doc.path]
@@ -84,12 +115,14 @@ async def sync_documents(
                 size=doc.size,
                 content=doc.content,
                 rag_status=rag_status,
+                origin="file",
             )
             session.add(new_doc)
             stats["created"] += 1
             changed_paths.append(doc.path)
 
-    # 删除已不存在的文档(仅 local 作用域,绝不触及节点文档;删除前捕获 id 供向量清理)
+    # 删除已不存在的文档(仅 local 且 file 来源,绝不触及节点文档与 agent 来源文档;
+    # 删除前捕获 id 供向量清理)。agent 来源文档因不在 existing 中而天然被排除。
     paths_to_delete = set(existing.keys()) - scanned_paths
     deleted_ids: list[int] = []
     if paths_to_delete:

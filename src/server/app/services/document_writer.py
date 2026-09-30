@@ -7,9 +7,15 @@
 - 标题提取(内容前 5 行 `# ` → 路径文件名)
 - SHA256 与字节大小重算
 - ``rag_status`` 策略(``initial_rag_status`` / ``resolve_rag_status``)
+- **内容来源标记(``origin`` → ``agent``)**
 - 提交与 refresh
 
 避免 REST 与 MCP 两处各写一份导致 hash / 标题 / rag_status 漂移。
+
+关于 ``origin``(见 `document-persistence`):本模块是"Hub 写入"的唯一通道,它**只写索引库、
+不落磁盘**。因此经本模块产生的文档,内容以 Hub 库为准,标记为 ``agent`` 来源后对文件事件
+(Hub 扫描、节点同步)免疫——既不被磁盘内容覆盖,也不因文件消失被删除。
+不这样做的话,智能体写回的东西会被下一轮同步/扫描打回(见 `docs/known-issues.md` 问题 1/2)。
 
 本模块 **不做** 权限与作用域校验(那是端点职责),也 **不派发** 向量维护:
 调用方以 ``doc.rag_status == "indexed"`` 作为"应派发后台索引"的信号——
@@ -89,6 +95,8 @@ async def create_document(
 
     唯一性以 ``(node_id, path)`` 判定,冲突抛 :class:`PathConflict`。
     标题缺省或为空时,先取内容首个 `# ` 标题,再退化为路径文件名(去扩展名)。
+    内容来源固定为 ``agent``——本函数不落磁盘,新建的文档没有对应的磁盘文件,
+    必须由 Hub 库持有其权威内容,否则会被扫描的删除推导清掉(known-issues 问题 2)。
     调用方负责:作用域归属(node_id)的确定与权限校验、commit 后的向量派发。
     """
     existing = await session.execute(
@@ -110,6 +118,7 @@ async def create_document(
         size=_content_size(content),
         content=content,
         rag_status=initial_rag_status(rag_mode, vectorization_enabled),
+        origin="agent",
     )
     session.add(doc)
     await session.commit()
@@ -123,11 +132,15 @@ async def update_document(session: AsyncSession, doc: Document, content: str) ->
 
     标题仅在内容前 5 行存在 `# ` 时更新(否则保留原值,与既有行为一致)。
     ``excluded`` 状态由 :func:`resolve_rag_status` 保持(用户显式移出不因内容变更被拉回)。
+    内容来源转为 ``agent``:正文已由 Hub 改写、与磁盘文件不再一致,自此以 Hub 库为准,
+    不再接受扫描/节点同步的覆盖(known-issues 问题 1)。该转换是**单向**的——
+    文件事件不会把文档拉回 ``file``。
     调用方负责:作用域校验与 commit 后的向量派发。
     """
     doc.content = content
     doc.hash = _content_hash(content)
     doc.size = _content_size(content)
+    doc.origin = "agent"
 
     extracted = _title_from_content(content)
     if extracted:

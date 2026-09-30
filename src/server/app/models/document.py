@@ -36,6 +36,16 @@ class Document(Base):
     size: Mapped[int] = mapped_column(Integer, nullable=False)
     tags: Mapped[str] = mapped_column(Text, default="[]")  # JSON array as string
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 内容来源(document-persistence):标识正文的权威来源,决定文件事件(扫描/节点同步)
+    # 能否覆盖或删除本文档。
+    #   file  —— 内容由文件扫描派生(Hub 本机目录扫描、节点磁盘扫描上传),磁盘是权威;
+    #            可被扫描与节点同步覆盖,可因文件消失被删除。
+    #   agent —— 内容由 Hub/智能体写入(REST POST/PUT、MCP create/update),无对应磁盘文件,
+    #            Hub 库是权威;对文件来源事件免疫(既不覆盖也不删除)。
+    # 默认 file:存量行全部由扫描或节点上传产生,迁移后行为与迁移前一致。
+    origin: Mapped[str] = mapped_column(
+        String(8), default="file", nullable=False, index=True
+    )
     # RAG 状态(见 vector-search 规范):not_indexed(尚未向量化,默认态) /
     # pending(排队中) / indexed(已入向量库) / excluded(用户显式移出)
     rag_status: Mapped[str] = mapped_column(
@@ -56,6 +66,7 @@ class Document(Base):
             "size": self.size,
             "tags": json.loads(self.tags) if self.tags else [],
             "rag_status": self.rag_status,
+            "origin": self.origin,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
