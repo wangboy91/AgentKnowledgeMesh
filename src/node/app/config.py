@@ -85,6 +85,20 @@ class NodeSettings(BaseSettings):
         "",
     )
 
+    # 上传分批（node-upload-batching）：
+    # 单轮待推送文档超量时按体积/条数切分为多个请求，避免单个请求体
+    # 撞上对端反向代理的 body 上限（nginx 默认 client_max_body_size 1m）而 413。
+    # 注意：此处是**保守估算**的体积口径，真实序列化后可能略小，故默认值
+    # 留了余量（见 design.md D2/D3）。
+    # 单请求体体积上限（字节）；<= 0 表示该维度不限制
+    upload_batch_bytes: int = Field(
+        512 * 1024,
+    )
+    # 单请求文档条数上限；<= 0 表示该维度不限制
+    upload_batch_docs: int = Field(
+        50,
+    )
+
     model_config = {
         "env_prefix": "AKM_",
         # 列表后者优先：用户目录文件覆盖开发仓的 src/node/.env

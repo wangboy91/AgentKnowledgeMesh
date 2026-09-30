@@ -556,11 +556,14 @@ Register-ScheduledTask -TaskName "akm-node" -Action $action -Trigger $trigger -S
 | `AKM_WATCH_DEBOUNCE_SECONDS` | `3` | 事件防抖窗口;编辑器保存等密集事件聚合后只触发一次同步 |
 | `AKM_WATCH_RECONCILE_SECONDS` | `300` | 定时全量对账间隔;`0` = 关闭 |
 | `AKM_WATCH_EXCLUDE` | 空 | 在内置排除目录之外追加的排除目录名(逗号分隔) |
+| `AKM_UPLOAD_BATCH_BYTES` | `524288` | 上传切批的单请求体上限(字节);`0` 或负数 = 不限制 |
+| `AKM_UPLOAD_BATCH_DOCS` | `50` | 上传切批的单请求条数上限;`0` 或负数 = 不限制 |
 
 - 改动到 Hub 可见的延迟 ≈ 防抖窗口 + 上传耗时,典型 **< 10 秒**
 - 监听与对账**并存**:监听负责实时,对账兜住丢事件(跨平台差异、网络文件系统)
 - 只同步 `.md`;`.git` / `.venv` / `node_modules` / `dist` / `build` 等目录始终跳过
 - 其他电脑的智能体经 MCP 查询读到的是 Hub 最新数据;**文档不会下发到各节点本地磁盘**(节点只上行,无下行通道)
+- **上传分批**:一轮同步的文档按体积/条数切为多个请求发送(默认单请求 ≤ 512 KiB / 50 条)。这使得知识库规模不受 Hub 前置反向代理 body 上限的限制——nginx 用默认 `client_max_body_size 1m` 也能首次接入成千上万篇文档。内网直连(无代理)可调大这两个值以减少请求数
 
 ---
 
@@ -611,6 +614,7 @@ claude mcp add agentknowledge -- akm-node --mcp
 | 想换知识库目录 | 改 `~/.akm-node/.env` 的 `AKM_KNOWLEDGE_ROOTS` 后重启节点 |
 | 改了文件但 Hub 上没更新 | 确认节点在运行且启动日志有「👁 监听中」;容器 / bind mount 场景监听不可用(见 §2.4),此时依赖对账(默认 300 秒),可调小 `AKM_WATCH_RECONCILE_SECONDS` |
 | 启动日志显示「文件监听已关闭」 | 该部署设了 `AKM_WATCH_ENABLED=false`(节点容器默认如此)。Linux 宿主可改为 `true` 获得秒级同步 |
+| 日志有 `Document upload rejected (413)` / `413 Request Entity Too Large` | 单次请求体超过了 Hub 前置反向代理的 body 上限。**默认配置下不应出现**(节点已按 512 KiB 切批);若自行调大了 `AKM_UPLOAD_BATCH_BYTES`,请同步放大 nginx 的 `client_max_body_size`,或把该值调回默认。症状特征是「节点已连上、日志有 `Found N documents`,但 Hub 里一篇都没有」 |
 | Hub 换了地址 | 重新 `akm-node login` 输入新地址(凭证会刷新) |
 | Hub 挂在反代子路径下(如 `https://xx.com/akm/`) | 三处都要带前缀:Hub 侧 `AKM_ROOT_PATH=/akm`、反代转发 `/akm/`、节点侧 `AKM_HUB_API_URL=https://xx.com/akm/api`。见 §1.9 |
 | 子路径下页面能开但接口 404 / 白屏 | 检查 `AKM_ROOT_PATH` 与反代前缀是否一致;反代缺 WebSocket 升级头时节点会反复重连(§1.9) |

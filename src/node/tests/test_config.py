@@ -29,6 +29,8 @@ _AKM_ENV_KEYS = [
     "AKM_WATCH_DEBOUNCE_SECONDS",
     "AKM_WATCH_RECONCILE_SECONDS",
     "AKM_WATCH_EXCLUDE",
+    "AKM_UPLOAD_BATCH_BYTES",
+    "AKM_UPLOAD_BATCH_DOCS",
 ]
 
 
@@ -166,3 +168,41 @@ def test_hub_credentials_from_env_file(tmp_path, monkeypatch):
 
     assert settings.has_hub_credentials is True
     assert settings.hub_username == "admin"
+
+
+# ---- 上传分批配置（node-upload-batching） ----
+
+def test_upload_batch_defaults(monkeypatch):
+    """默认单请求 512 KiB / 50 条."""
+    for key in _AKM_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    settings = NodeSettings(_env_file=None)
+
+    assert settings.upload_batch_bytes == 512 * 1024
+    assert settings.upload_batch_docs == 50
+
+
+def test_upload_batch_env_overrides(monkeypatch):
+    """环境变量可覆盖两个上限."""
+    monkeypatch.setenv("AKM_UPLOAD_BATCH_BYTES", "1048576")
+    monkeypatch.setenv("AKM_UPLOAD_BATCH_DOCS", "10")
+    try:
+        settings = NodeSettings(_env_file=None)
+        assert settings.upload_batch_bytes == 1048576
+        assert settings.upload_batch_docs == 10
+    finally:
+        for key in _AKM_ENV_KEYS:
+            monkeypatch.delenv(key, raising=False)
+
+
+def test_upload_batch_non_positive_means_unlimited(monkeypatch):
+    """<= 0 表示该维度不限(逃生舱:完全退回分批前行为)."""
+    monkeypatch.setenv("AKM_UPLOAD_BATCH_BYTES", "0")
+    monkeypatch.setenv("AKM_UPLOAD_BATCH_DOCS", "-1")
+    try:
+        settings = NodeSettings(_env_file=None)
+        assert settings.upload_batch_bytes == 0
+        assert settings.upload_batch_docs == -1
+    finally:
+        for key in _AKM_ENV_KEYS:
+            monkeypatch.delenv(key, raising=False)

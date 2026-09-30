@@ -103,6 +103,8 @@ uv run akm-node --help  # 命令一览:用法、断开(Ctrl+C)与断线重连(5 
 >
 > 同步为 hash-first 增量:首轮全量上传,之后未变更文档仅上报 path+hash,删除显式走 `deletions`;快照存于 `src/node/data/sync_state.json`(已 gitignore),删除它可在下轮强制全量重建。协议细节见 [docs/api-reference.md §8](docs/api-reference.md)。
 >
+> 上传会按体积(默认 512 KiB)与条数(默认 50)自动切分为多个请求,因此知识库规模不受 Hub 前置反向代理 body 上限约束——即便 nginx 用默认的 `client_max_body_size 1m`,首次接入大知识库也不会 413(`AKM_UPLOAD_BATCH_*` 可调,内网直连可调大以减少请求数)。
+>
 > 节点常驻时会**监听知识库目录**,文件改动数秒内同步到 Hub(防抖默认 3 秒),另每 300 秒做一次全量对账兜底(监听可能丢事件)。只同步 `.md`,`.git` / `node_modules` / `dist` 等目录自动跳过;四个配置项(`AKM_WATCH_*`)与后台常驻模板见 [docs/deployment.md §2.5](docs/deployment.md)。容器 / bind mount 场景监听不可用,自动依赖对账。
 >
 > ⚠️ 同步是**单向**的:各节点把文档推给 Hub,其他电脑的智能体经 MCP / Web 查询 Hub 拿到最新内容;文档不会下发到各节点本地磁盘。
@@ -177,6 +179,7 @@ docker compose -f deploy/docker-compose.node.yml up -d --build
 | `AKM_EMBEDDING_PROVIDER` | 模板内 `local` | `local`(离线)/ `ark`(火山引擎,中文更好) |
 | `AKM_HUB_URL`(node) | `ws://localhost:8000/ws` | Hub 地址 |
 | `AKM_HUB_USERNAME` / `AKM_HUB_PASSWORD`(node) | 空 | 可选;配齐后节点启动时自动登录换取凭证(无凭证时生效) |
+| `AKM_UPLOAD_BATCH_BYTES` / `AKM_UPLOAD_BATCH_DOCS`(node) | `524288` / `50` | 上传分批的单请求体上限(字节)/ 条数上限;置 0 或负数为不限 |
 
 完整配置与混合检索调优参数见模板文件内注释。
 

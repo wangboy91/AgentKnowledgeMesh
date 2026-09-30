@@ -259,3 +259,103 @@ async def test_concurrent_sync_serialized(tmp_path, monkeypatch):
     )
 
     assert state["max_active"] == 1
+
+
+# ---- 局部同步的分批（node-upload-batching） ----
+
+async def test_local_sync_batches_when_over_limit(tmp_path, monkeypatch):
+    """批量变更聚合后超过条数上限 → 切分为多批,快照仍按局部语义更新."""
+    sync, calls, snap_path, kb = _make(
+        tmp_path, monkeypatch,
+        [
+            _ok(created=2),
+            _ok(created=1),
+        ],
+    )
+    sync.settings.upload_batch_bytes = 0
+    sync.settings.upload_batch_docs = 2
+
+    for i in range(3):
+        _write(kb / f"f{i}.md", f"# T{i}\n\nbody{i}\n")
+    changed = [kb / f"f{i}.md" for i in range(3)]
+
+    await sync.sync_paths(changed=changed)
+
+    assert len(calls["payloads"]) == 2
+    assert [len(p["documents"]) for p in calls["payloads"]] == [2, 1]
+    snap = json.loads(snap_path.read_text(encoding="utf-8"))
+    assert all(f"f{i}.md" in snap for i in range(3))
+
+
+async def test_local_sync_batch_failure_keeps_snapshot(tmp_path, monkeypatch):
+    """局部同步分批中途失败 → 快照不动（未被删除的旧条目也保留）."""
+    sync, calls, snap_path, kb = _make(
+        tmp_path, monkeypatch,
+        [
+            _ok(created=2),
+            _FakeResponse(413, "too large"),
+        ],
+        snapshot={"keep.md": "hash-keep"},
+    )
+    sync.settings.upload_batch_bytes = 0
+    sync.settings.upload_batch_docs = 2
+
+    for i in range(4):
+        _write(kb / f"f{i}.md", f"# T{i}\n\nbody{i}\n")
+    changed = [kb / f"f{i}.md" for i in range(4)]
+
+    await sync.sync_paths(changed=changed)
+
+    assert len(calls["payloads"]) == 2  # 中止,不发后续批
+    snap = json.loads(snap_path.read_text(encoding="utf-8"))
+    assert snap == {"keep.md": "hash-keep"}
+
+
+# ---- 局部同步的分批（node-upload-batching） ----
+
+async def test_local_sync_batches_when_over_limit(tmp_path, monkeypatch):
+    """批量变更聚合后超过条数上限 → 切分为多批,快照仍按局部语义更新."""
+    sync, calls, snap_path, kb = _make(
+        tmp_path, monkeypatch,
+        [
+            _ok(created=2),
+            _ok(created=1),
+        ],
+    )
+    sync.settings.upload_batch_bytes = 0
+    sync.settings.upload_batch_docs = 2
+
+    for i in range(3):
+        _write(kb / f"f{i}.md", f"# T{i}\n\nbody{i}\n")
+    changed = [kb / f"f{i}.md" for i in range(3)]
+
+    await sync.sync_paths(changed=changed)
+
+    assert len(calls["payloads"]) == 2
+    assert [len(p["documents"]) for p in calls["payloads"]] == [2, 1]
+    snap = json.loads(snap_path.read_text(encoding="utf-8"))
+    assert all(f"f{i}.md" in snap for i in range(3))
+
+
+async def test_local_sync_batch_failure_keeps_snapshot(tmp_path, monkeypatch):
+    """局部同步分批中途失败 → 快照不动（未被删除的旧条目也保留）."""
+    sync, calls, snap_path, kb = _make(
+        tmp_path, monkeypatch,
+        [
+            _ok(created=2),
+            _FakeResponse(413, "too large"),
+        ],
+        snapshot={"keep.md": "hash-keep"},
+    )
+    sync.settings.upload_batch_bytes = 0
+    sync.settings.upload_batch_docs = 2
+
+    for i in range(4):
+        _write(kb / f"f{i}.md", f"# T{i}\n\nbody{i}\n")
+    changed = [kb / f"f{i}.md" for i in range(4)]
+
+    await sync.sync_paths(changed=changed)
+
+    assert len(calls["payloads"]) == 2  # 中止,不发后续批
+    snap = json.loads(snap_path.read_text(encoding="utf-8"))
+    assert snap == {"keep.md": "hash-keep"}
