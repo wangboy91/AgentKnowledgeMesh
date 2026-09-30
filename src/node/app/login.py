@@ -4,6 +4,10 @@
 POST /api/auth/login -> POST /api/nodes/register 换取节点 token,
 并写入用户级 .env(~/.akm-node/.env,可用 AKM_NODE_ENV_FILE 覆盖),
 登录成功后由 CLI 入口自动进入运行循环(连接 → 扫描 → 同步)。
+
+另提供非交互的 `auto_login()`(node-env-login):从配置读取
+AKM_HUB_USERNAME / AKM_HUB_PASSWORD 换取凭证,供启动时自动登录与
+凭证失效后的静默重登使用,免去无人值守场景的终端交互。
 """
 
 import asyncio
@@ -11,7 +15,7 @@ from pathlib import Path
 
 import httpx
 
-from app.config import USER_ENV_FILE, settings
+from app.config import USER_ENV_FILE, NodeSettings, settings
 
 
 def _read_password(prompt: str) -> str:
@@ -56,12 +60,19 @@ def _update_env(path: Path, updates: dict) -> None:
     path.write_text("\n".join(result) + "\n", encoding="utf-8")
 
 
-async def _exchange_credentials(hub_api_url: str, username: str, password: str, node_name: str) -> dict:
+async def _exchange_credentials(
+    hub_api_url: str,
+    username: str,
+    password: str,
+    node_name: str,
+    config: NodeSettings | None = None,
+) -> dict:
     """登录并注册节点,返回 {node_id, node_token}.
 
     已有节点身份(AKM_NODE_ID)时携带它,Hub 复用同一节点记录并轮换 token,
-    避免每次重登都新建节点。
+    避免每次重登都新建节点。config 缺省用模块级 settings(交互登录场景)。
     """
+    cfg = config or settings
     base = hub_api_url.rstrip("/")
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
@@ -71,9 +82,9 @@ async def _exchange_credentials(hub_api_url: str, username: str, password: str, 
             raise RuntimeError(f"登录失败({resp.status_code}):用户名或密码错误")
         access_token = resp.json()["access_token"]
 
-        payload = {"node_name": node_name, "platform": settings.get_platform()}
-        if settings.node_id:
-            payload["node_id"] = settings.node_id
+        payload = {"node_name": node_name, "platform": cfg.get_platform()}
+        if cfg.node_id:
+            payload["node_id"] = cfg.node_id
         resp = await client.post(
             f"{base}/nodes/register",
             json=payload,
@@ -123,7 +134,9 @@ def prompt_and_exchange(default_hub_api_url: str) -> tuple[dict, str]:
         raise RuntimeError("密码不能为空")
 
     node_name = settings.get_node_name()
-    result = _run_exchange(_exchange_credentials(hub_api_url, username, password, node_name))
+    result = _run_exchange(
+        _exchange_credentials(hub_api_url, username, password, node_name, settings)
+    )
 
     _update_env(
         USER_ENV_FILE,
@@ -135,6 +148,47 @@ def prompt_and_exchange(default_hub_api_url: str) -> tuple[dict, str]:
         },
     )
     return result, hub_api_url
+
+
+def auto_login(config: NodeSettings) -> NodeSettings:
+    """用配置中的 Hub 账号换取节点凭证(非交互),返回注入凭证的新配置.
+
+    供启动时自动登录使用(node-env-login)。与 `prompt_and_exchange` 的差别:
+    账号取自 AKM_HUB_USERNAME / AKM_HUB_PASSWORD,不读 stdin、不要求 tty。
+
+    凭证尽力写回 USER_ENV_FILE(与交互登录同一组键、同一位置):落盘后下次
+    启动直接走 token,账号密码即可从配置中移除。写失败只告警不阻断——凭证已在
+    返回的配置里,本次运行照常。
+    """
+    if not config.has_hub_credentials:
+        raise RuntimeError("未配置 Hub 账号:请设置 AKM_HUB_USERNAME / AKM_HUB_PASSWORD")
+
+    result = _run_exchange(
+        _exchange_credentials(
+            config.hub_api_url,
+            config.hub_username,
+            config.hub_password,
+            config.get_node_name(),
+            config,
+        )
+    )
+    print(f"🔐 已用配置的 Hub 账号自动登录:node_id={result['node_id']}")
+    try:
+        _update_env(
+            USER_ENV_FILE,
+            {
+                "AKM_NODE_ID": result["node_id"],
+                "AKM_NODE_TOKEN": result["node_token"],
+            },
+        )
+        print(f"   凭证已写入 {USER_ENV_FILE}")
+    except OSError as e:
+        # 只读挂载/权限不足等:内存凭证已可用,不因落盘失败中断接入
+        print(f"⚠️ 凭证写入 {USER_ENV_FILE} 失败({e});本次运行使用内存凭证")
+
+    return config.model_copy(
+        update={"node_id": result["node_id"], "node_token": result["node_token"]}
+    )
 
 
 def run_login() -> int:

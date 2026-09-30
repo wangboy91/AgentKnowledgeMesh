@@ -46,7 +46,11 @@ def _print_help() -> None:
     print("  断开连接:Ctrl+C 退出进程")
     print("  断线重连:自动,连接断开后每 5 秒重试,Hub 恢复后自动接上并重新同步")
     print()
-    print("凭证保存在用户目录 .akm-node/.env(可用 AKM_NODE_ENV_FILE 自定义路径)")
+    print("凭证:")
+    print("  交互登录一次即可,凭证保存在用户目录 .akm-node/.env")
+    print("  (可用 AKM_NODE_ENV_FILE 自定义路径)")
+    print("  无人值守部署可改配 AKM_HUB_USERNAME / AKM_HUB_PASSWORD 环境变量,")
+    print("  启动时自动登录换取凭证(已有凭证时不再登录)")
 
 
 def _print_banner(config: NodeSettings) -> None:
@@ -66,6 +70,36 @@ def _run_client(client: HubClient) -> None:
         asyncio.run(client.run())
     except KeyboardInterrupt:
         print("\n👋 Node stopped")
+
+
+def _resolve_settings() -> NodeSettings:
+    """启动前解析可用凭证配置(node-env-login).
+
+    1. 已有节点凭证 → 直接用(不触发登录,避免每次启动轮换 token)
+    2. 无凭证但配置了 Hub 账号 → 非交互自动登录换取凭证
+    3. 两者都没有 → 提示先 login,以退出码 1 结束
+
+    自动登录成功后,凭证同时同步回模块级 settings 单例:`--mcp` 等模块直接
+    读取该单例,不同步会让它们拿到空凭证。
+    """
+    if settings.node_token:
+        return settings
+
+    if not settings.has_hub_credentials:
+        print("❌ 节点尚未接入:请先执行 `akm-node login` 完成登录(account-auth)")
+        print("   或在配置中提供 AKM_HUB_USERNAME / AKM_HUB_PASSWORD 以启动时自动登录")
+        sys.exit(1)
+
+    from app.login import auto_login
+
+    try:
+        fresh = auto_login(settings)
+    except Exception as e:  # 网络错误、账号密码错误等
+        print(f"❌ 自动登录失败:{e}")
+        sys.exit(1)
+
+    settings.node_id, settings.node_token = fresh.node_id, fresh.node_token
+    return fresh
 
 
 def main():
@@ -95,12 +129,10 @@ def main():
         _run_client(HubClient(fresh))
         return
 
-    # 无凭证时拒绝启动(不再支持匿名接入)
-    if not settings.node_token:
-        print("❌ 节点尚未接入:请先执行 `akm-node login` 完成登录(account-auth)")
-        sys.exit(1)
+    # 凭证解析(无凭证且配置了 Hub 账号时自动登录;均不可用时退出)
+    config = _resolve_settings()
 
-    # 本地 MCP 代理模式:智能体拉起子进程,stdio 提供与 Hub 同名的三个工具;
+    # 本地 MCP 代理模式:智能体拉起子进程,stdio 提供与 Hub 同名的五个工具;
     # 单职责短生命周期进程,不启动同步循环
     if "--mcp" in sys.argv:
         from app.mcp_proxy import run_mcp_proxy
@@ -108,9 +140,9 @@ def main():
         asyncio.run(run_mcp_proxy())
         return
 
-    _print_banner(settings)
+    _print_banner(config)
 
-    _run_client(HubClient())
+    _run_client(HubClient(config))
 
 
 if __name__ == "__main__":

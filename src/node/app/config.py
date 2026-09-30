@@ -35,6 +35,14 @@ class NodeSettings(BaseSettings):
     hub_api_url: str = Field(
         "http://localhost:8000/api",
     )
+    # Hub 登录账号(可选,node-env-login):配置齐全时启动即自动换取节点凭证,
+    # 免去无人值守环境下的交互登录;已有 node_token 时以 token 为准(不触发登录)
+    hub_username: str = Field(
+        "",
+    )
+    hub_password: str = Field(
+        "",
+    )
 
     # 节点信息
     node_id: str = Field(
@@ -43,7 +51,7 @@ class NodeSettings(BaseSettings):
     node_name: str = Field(
         "",
     )
-    # 节点凭证(account-auth):由 `akm-node login` 写入本地 .env
+    # 节点凭证(account-auth):由 `akm-node login` 或环境变量账号自动登录写入本地 .env
     node_token: str = Field(
         "",
     )
@@ -99,6 +107,15 @@ class NodeSettings(BaseSettings):
     def get_platform(self) -> str:
         """获取平台."""
         return platform.system().lower()
+
+    @property
+    def has_hub_credentials(self) -> bool:
+        """是否配置了完整的 Hub 登录账号(node-env-login).
+
+        两个都填才算配置齐全:只填一个通常是误配置,按"未配置"处理,
+        让启动提示引导用户补齐(而非拿半个凭证去撞 401)。
+        """
+        return bool(self.hub_username and self.hub_password)
 
     @property
     def knowledge_paths(self) -> list[Path]:

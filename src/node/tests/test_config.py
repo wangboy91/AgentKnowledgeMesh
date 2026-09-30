@@ -4,6 +4,8 @@
 - 仓库 .env 存在且用户 .env 不存在 → 仓库文件生效(开发场景兼容)
 - 两者并存 → 用户目录文件覆盖仓库文件
 - AKM_NODE_ENV_FILE 自定义路径 → USER_ENV_FILE 指向该路径
+- 文件监听与对账配置(add-node-file-watch)
+- Hub 账号配置与 has_hub_credentials 判定(node-env-login)
 """
 
 import importlib
@@ -19,6 +21,8 @@ _AKM_ENV_KEYS = [
     "AKM_NODE_NAME",
     "AKM_HUB_URL",
     "AKM_HUB_API_URL",
+    "AKM_HUB_USERNAME",
+    "AKM_HUB_PASSWORD",
     "AKM_KNOWLEDGE_ROOTS",
     "AKM_NODE_ENV_FILE",
     "AKM_WATCH_ENABLED",
@@ -120,3 +124,45 @@ def test_watch_excluded_names_ignores_blanks(monkeypatch):
         assert NodeSettings(_env_file=None).watch_excluded_names == {"a", "b"}
     finally:
         monkeypatch.delenv("AKM_WATCH_EXCLUDE", raising=False)
+
+
+# ---- Hub 账号配置（node-env-login） ----
+
+def test_hub_credentials_absent_by_default(monkeypatch):
+    """未配置账号时字段为空、has_hub_credentials 为 False."""
+    for key in _AKM_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    settings = NodeSettings(_env_file=None)
+
+    assert settings.hub_username == ""
+    assert settings.hub_password == ""
+    assert settings.has_hub_credentials is False
+
+
+def test_hub_credentials_require_both(monkeypatch):
+    """只填一个视为未配置齐全(避免拿半个凭证去撞 401)."""
+    monkeypatch.delenv("AKM_HUB_PASSWORD", raising=False)
+    monkeypatch.setenv("AKM_HUB_USERNAME", "admin")
+    try:
+        assert NodeSettings(_env_file=None).has_hub_credentials is False
+
+        monkeypatch.setenv("AKM_HUB_PASSWORD", "secret")
+        assert NodeSettings(_env_file=None).has_hub_credentials is True
+    finally:
+        monkeypatch.delenv("AKM_HUB_USERNAME", raising=False)
+        monkeypatch.delenv("AKM_HUB_PASSWORD", raising=False)
+
+
+def test_hub_credentials_from_env_file(tmp_path, monkeypatch):
+    """账号也可写在 .env 文件里(与其余配置同一解析顺序)."""
+    for key in _AKM_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    env_file = tmp_path / "node.env"
+    env_file.write_text(
+        "AKM_HUB_USERNAME=admin\nAKM_HUB_PASSWORD=secret\n", encoding="utf-8"
+    )
+
+    settings = NodeSettings(_env_file=str(env_file))
+
+    assert settings.has_hub_credentials is True
+    assert settings.hub_username == "admin"

@@ -5,6 +5,12 @@
   且短路优先(携带其他参数时同样只输出帮助,不触发登录/连接)
 - run_login 成功/失败返回值与"自动接入"提示
 - 登录写入新凭证后,HubClient 以新 NodeSettings 构造(防模块级单例持旧值)
+
+覆盖 node-env-login 变更:
+- 无凭证但配置了 AKM_HUB_USERNAME / AKM_HUB_PASSWORD → 启动自动登录并进入运行循环
+- 已有凭证 → 不调用登录/注册(不轮换 token)
+- 自动登录失败 / 无凭证且未配置账号 → 退出码 1,不启动客户端
+- 配置了账号也不静默重登(不解除 Hub 端禁用)
 """
 
 import app.login
@@ -14,13 +20,32 @@ from app import __main__ as cli
 from app.config import NodeSettings
 from app.runner import HubClient
 
+# 清掉可能来自真实 .env / 进程环境的账号变量,避免测试间串味
+_ACCOUNT_KEYS = ("AKM_NODE_TOKEN", "AKM_HUB_USERNAME", "AKM_HUB_PASSWORD")
+
+
+def _clean_env(monkeypatch) -> None:
+    for key in _ACCOUNT_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+
+def _isolated_settings(monkeypatch) -> NodeSettings:
+    """构造不读任何 .env 文件的配置,并替换 CLI 模块级单例.
+
+    开发机上 src/node/.env 与 ~/.akm-node/.env 可能带真实凭证,直接断言单例
+    会随机器而异;替换为 _env_file=None 的实例后,只有进程环境变量生效。
+    """
+    fresh = NodeSettings(_env_file=None)
+    monkeypatch.setattr(cli, "settings", fresh)
+    return fresh
+
 
 def test_help_lists_commands_and_run_control(capsys, monkeypatch):
     """--help 列出命令用法与断开/重连说明."""
     monkeypatch.setattr("sys.argv", ["akm-node", "--help"])
     cli.main()
     out = capsys.readouterr().out
-    for expected in ("login", "--mcp", "--version", "Ctrl+C", "5 秒"):
+    for expected in ("login", "--mcp", "--version", "Ctrl+C", "5 秒", "AKM_HUB_USERNAME"):
         assert expected in out, f"帮助输出缺少关键内容: {expected}"
 
 
@@ -180,3 +205,200 @@ def test_try_relogin_skipped_in_non_interactive_env(monkeypatch):
 
     assert client._try_relogin() is False
     assert not called, "非交互环境仍尝试了交互重登"
+
+
+def test_try_relogin_ignores_env_account(monkeypatch):
+    """配置了 Hub 账号也不静默重登(node-env-login 刻意留出的边界).
+
+    Hub 的 register 会清除 disabled,静默重登会让 admin 的"禁用"被无人值守
+    进程自动解除;故凭证失效后仍走既有语义:非交互保持重试。
+    """
+    _clean_env(monkeypatch)
+    monkeypatch.setenv("AKM_HUB_USERNAME", "admin")
+    monkeypatch.setenv("AKM_HUB_PASSWORD", "pw")
+    client = HubClient(NodeSettings(_env_file=None))
+
+    class _NotTty:
+        def isatty(self) -> bool:
+            return False
+
+    monkeypatch.setattr("sys.stdin", _NotTty())
+    monkeypatch.setattr("sys.stderr", _NotTty())
+    called = []
+    monkeypatch.setattr(app.login, "prompt_and_exchange", lambda *a, **k: called.append("prompt"))
+    monkeypatch.setattr(app.login, "auto_login", lambda *a, **k: called.append("auto"))
+
+    assert client._try_relogin() is False
+    assert not called, "配置了账号仍触发了重登"
+
+
+# ---- node-env-login:环境变量账号与启动自动登录 ----
+
+
+def _fake_client_recorder(monkeypatch) -> dict:
+    """把 cli.HubClient 换成记录用假客户端,返回记录容器."""
+    seen: dict = {}
+
+    class _FakeClient:
+        def __init__(self, settings=None):
+            seen["settings"] = settings
+
+        async def run(self):
+            seen["ran"] = True
+
+    monkeypatch.setattr(cli, "HubClient", _FakeClient)
+    return seen
+
+
+def test_env_account_auto_login_then_run(monkeypatch, capsys):
+    """无凭证 + 配置账号 → 自动登录换取凭证并进入运行循环."""
+    _clean_env(monkeypatch)
+    monkeypatch.setattr("sys.argv", ["akm-node"])
+    monkeypatch.setenv("AKM_HUB_USERNAME", "admin")
+    monkeypatch.setenv("AKM_HUB_PASSWORD", "pw")
+    module_settings = _isolated_settings(monkeypatch)
+
+    calls = []
+
+    def _fake_auto_login(config):
+        calls.append(config)
+        return config.model_copy(update={"node_id": "nid-auto", "node_token": "auto-token"})
+
+    monkeypatch.setattr(app.login, "auto_login", _fake_auto_login)
+    seen = _fake_client_recorder(monkeypatch)
+
+    cli.main()
+
+    assert len(calls) == 1, "未触发自动登录"
+    assert seen.get("ran") is True, "自动登录后未进入运行循环"
+    assert seen["settings"].node_token == "auto-token"
+    assert seen["settings"].node_id == "nid-auto"
+    # --mcp 等模块读模块级单例,凭证必须同步过去
+    assert module_settings.node_token == "auto-token"
+
+
+def test_existing_token_skips_auto_login(monkeypatch):
+    """已有凭证时直接用 token,不调用登录/注册(不轮换 token)."""
+    _clean_env(monkeypatch)
+    monkeypatch.setattr("sys.argv", ["akm-node"])
+    monkeypatch.setenv("AKM_HUB_USERNAME", "admin")
+    monkeypatch.setenv("AKM_HUB_PASSWORD", "pw")
+    monkeypatch.setenv("AKM_NODE_TOKEN", "existing-token")
+    _isolated_settings(monkeypatch)
+
+    called = []
+    monkeypatch.setattr(app.login, "auto_login", lambda *a, **k: called.append(1))
+    seen = _fake_client_recorder(monkeypatch)
+
+    cli.main()
+
+    assert not called, "已有凭证仍触发了登录"
+    assert seen["settings"].node_token == "existing-token"
+
+
+def test_no_token_and_no_account_exits_with_hint(monkeypatch, capsys):
+    """无凭证且未配置账号 → 提示引导 + 退出码 1,不启动客户端."""
+    _clean_env(monkeypatch)
+    monkeypatch.setattr("sys.argv", ["akm-node"])
+    _isolated_settings(monkeypatch)
+
+    started = []
+    monkeypatch.setattr(cli, "HubClient", lambda *a, **k: started.append(1))
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main()
+
+    assert excinfo.value.code == 1
+    out = capsys.readouterr().out
+    assert "akm-node login" in out
+    assert "AKM_HUB_USERNAME" in out
+    assert not started, "无凭证时仍启动了客户端"
+
+
+def test_auto_login_failure_exits_nonzero(monkeypatch, capsys):
+    """自动登录失败(账号密码错误/网络不通)→ 退出码 1,不进入运行循环."""
+    _clean_env(monkeypatch)
+    monkeypatch.setattr("sys.argv", ["akm-node"])
+    monkeypatch.setenv("AKM_HUB_USERNAME", "admin")
+    monkeypatch.setenv("AKM_HUB_PASSWORD", "wrong")
+    _isolated_settings(monkeypatch)
+
+    def _boom(config):
+        raise RuntimeError("登录失败(401):用户名或密码错误")
+
+    monkeypatch.setattr(app.login, "auto_login", _boom)
+    started = []
+    monkeypatch.setattr(cli, "HubClient", lambda *a, **k: started.append(1))
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main()
+
+    assert excinfo.value.code == 1
+    assert "自动登录失败" in capsys.readouterr().out
+    assert not started
+
+
+def test_auto_login_swaps_credentials_and_persists(monkeypatch, tmp_path, capsys):
+    """auto_login:换取凭证 → 写回 .env → 返回注入凭证的新配置(原配置不动)."""
+    _clean_env(monkeypatch)
+    env_file = tmp_path / ".env"
+    monkeypatch.setattr(app.login, "USER_ENV_FILE", env_file)
+
+    config = NodeSettings(
+        _env_file=None,
+        hub_api_url="http://hub:8000/api",
+        hub_username="admin",
+        hub_password="pw",
+    )
+    seen = {}
+
+    async def _fake_exchange(hub_api_url, username, password, node_name, cfg=None):
+        seen.update(
+            hub_api_url=hub_api_url, username=username, password=password, config=cfg
+        )
+        return {"node_id": "nid-1", "node_token": "tok-1"}
+
+    monkeypatch.setattr(app.login, "_exchange_credentials", _fake_exchange)
+
+    fresh = app.login.auto_login(config)
+
+    assert seen["hub_api_url"] == "http://hub:8000/api"
+    assert seen["username"] == "admin"
+    assert seen["config"] is config, "换取时未用传入配置(platform/node_id 会取到旧值)"
+    assert fresh.node_token == "tok-1"
+    assert fresh.node_id == "nid-1"
+    assert config.node_token == "", "原配置被就地修改"
+
+    persisted = env_file.read_text(encoding="utf-8")
+    assert "AKM_NODE_TOKEN=tok-1" in persisted
+    assert "AKM_NODE_ID=nid-1" in persisted
+    assert "自动登录" in capsys.readouterr().out
+
+
+def test_auto_login_requires_account(monkeypatch):
+    """未配置账号时直接报错,不发网络请求."""
+    _clean_env(monkeypatch)
+    with pytest.raises(RuntimeError):
+        app.login.auto_login(NodeSettings(_env_file=None))
+
+
+def test_auto_login_tolerates_env_write_failure(monkeypatch, tmp_path, capsys):
+    """凭证落盘失败(只读挂载/权限)只告警,仍返回可用配置."""
+    _clean_env(monkeypatch)
+    monkeypatch.setattr(app.login, "USER_ENV_FILE", tmp_path / "ro" / ".env")
+
+    def _boom(path, updates):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(app.login, "_update_env", _boom)
+
+    async def _fake_exchange(hub_api_url, username, password, node_name, cfg=None):
+        return {"node_id": "nid-2", "node_token": "tok-2"}
+
+    monkeypatch.setattr(app.login, "_exchange_credentials", _fake_exchange)
+
+    config = NodeSettings(_env_file=None, hub_username="admin", hub_password="pw")
+    fresh = app.login.auto_login(config)
+
+    assert fresh.node_token == "tok-2"
+    assert "⚠️" in capsys.readouterr().out
