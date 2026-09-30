@@ -17,7 +17,7 @@
 **进行中(V0.4 · 账号与治理)**
 
 - 🔐 账号体系(admin / viewer)+ 全端点鉴权
-- ⌨️ 节点 CLI 登录接入(`akm-node login`,登录成功即自动连接并首次同步),token 可吊销/重置;`--help` 说明命令与断线重连行为
+- ⌨️ 节点 CLI 登录接入(`akm-node login`,登录成功即自动连接并首次同步),token 可吊销/重置;`--help` 说明命令与断线重连行为;无人值守场景可用 `AKM_HUB_USERNAME` / `AKM_HUB_PASSWORD` 启动即自动登录
 - 📦 hash-first 增量同步(只传变更)
 - 👁 文件变更实时监听(改动数秒内同步到 Hub)+ 定时对账兜底
 - 🎚️ RAG 同步模式(auto / manual + 文档级勾选)
@@ -95,6 +95,8 @@ uv run akm-node --help  # 命令一览:用法、断开(Ctrl+C)与断线重连(5 
 
 > `akm-node login` 一条命令完成「换取凭证 → 连接 Hub → 首次扫描同步」,随后前台常驻;断开按 Ctrl+C。之后再启动只需 `uv run akm-node`(无凭证时会提示先登录)。
 
+> **无人值守部署**(systemd / 计划任务 / 容器)可改用环境变量免交互接入:在节点配置里填 `AKM_HUB_USERNAME` / `AKM_HUB_PASSWORD`(Hub 管理员账号),启动时若本地还没有节点凭证就会自动登录换取并写回 `~/.akm-node/.env`;已有凭证时直接使用、不再登录。凭证落盘后即可把密码移出配置(明文存放,注意权限)。两种方式等价,`akm-node login` 交互登录始终可用。
+
 > 首次启动 Hub 会自动创建管理员账号(默认用户名 `admin`,随机密码打印在启动日志;可用 `AKM_ADMIN_USERNAME` / `AKM_ADMIN_PASSWORD` 环境变量指定)。忘记密码可在 Hub 所在机器执行 `uv run akm-hub reset-password <username>`。
 >
 > 知识库目录仍通过节点本地 `.env` 的 `AKM_KNOWLEDGE_ROOTS` 配置(参考 `src/node/.env.example`)。
@@ -161,7 +163,7 @@ docker compose -f deploy/docker-compose.node.yml up -d --build
 远程/无节点机器用 Hub:SSE 模式 `"url": "http://localhost:8000/api/mcp/sse"`(需在 Web「设置」页创建 API Token),或 Hub 本机 stdio 模式 `"command": "uv", "args": ["run", "akm-hub", "--mcp"]`。三种接入形态工具集与返回格式完全一致。测试:`npx @modelcontextprotocol/inspector http://localhost:8000/api/mcp/sse`。
 
 - **Agent 检索接口**:`GET /api/context?q=xxx`(需 API Token)
-- **节点接入**:`uv run akm-node login` 输入账号密码 → 换取节点 token → 自动连接 Hub 并首次同步(前台常驻,Ctrl+C 退出);Web 端可吊销/重置(见 §3「节点接入」)
+- **节点接入**:`uv run akm-node login` 输入账号密码 → 换取节点 token → 自动连接 Hub 并首次同步(前台常驻,Ctrl+C 退出);Web 端可吊销/重置(见 §3「节点接入」)。免交互场景改用 `AKM_HUB_USERNAME` / `AKM_HUB_PASSWORD` 配置账号,启动即自动登录
 
 ## 配置
 
@@ -174,6 +176,7 @@ docker compose -f deploy/docker-compose.node.yml up -d --build
 | `AKM_KNOWLEDGE_ROOTS` | `~/Knowledge` | 知识库目录(逗号分隔多个) |
 | `AKM_EMBEDDING_PROVIDER` | 模板内 `local` | `local`(离线)/ `ark`(火山引擎,中文更好) |
 | `AKM_HUB_URL`(node) | `ws://localhost:8000/ws` | Hub 地址 |
+| `AKM_HUB_USERNAME` / `AKM_HUB_PASSWORD`(node) | 空 | 可选;配齐后节点启动时自动登录换取凭证(无凭证时生效) |
 
 完整配置与混合检索调优参数见模板文件内注释。
 

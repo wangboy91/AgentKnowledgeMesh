@@ -15,18 +15,22 @@
 #   docker compose -f deploy/docker-compose.node.yml logs -f akm-node   # 看日志
 #   docker compose -f deploy/docker-compose.node.yml down               # 停止
 #
-# 配置(可选 .env,放 deploy/.env;完整清单见 deploy/.env.example §7):
+#   💡 在 deploy/.env 里配 AKM_HUB_USERNAME / AKM_HUB_PASSWORD 即可省掉第 1 步:
+#      容器首次启动自动登录换取凭证并写入卷(无人值守场景推荐)。
+#
+# 配置(可选 .env,放 deploy/.env;完整清单见 deploy/.env.example §7 §8):
 #   KNOWLEDGE_DIR=/srv/knowledge                          # 本机知识库目录(只读;默认 ./knowledge)
 #   AKM_HUB_API_URL=http://host.docker.internal:8000/api   # 容器视角的 Hub 地址
 #   AKM_NODE_NAME=my-node                                  # Web「节点」页显示的名字
+#   AKM_HUB_USERNAME=admin                                 # 可选:启动时自动登录的 Hub 账号
 #
 # ⚠️ 两点容易踩:
 #   1) 容器内 Hub 地址以本文件/部署 .env 的环境变量为准 —— 进程环境变量优先级高于凭证文件
 #      (`src/node/app/config.py` 的解析顺序),换 Hub 地址请改这里后 `up -d` 重建容器;
 #      容器内 `login` 的作用是换取 token,不会覆盖这里的地址。
 #      另注意端口要对上 Hub 实际暴露的宿主机端口(deploy compose 默认 18000,宿主机直跑是 8000)。
-#   2) 未登录就启动:进程会因"节点尚未接入"退出并被 restart 策略拉起,日志反复出现该提示
-#      —— 按上面第 1 步先登录即可。
+#   2) 既未登录又没配账号就启动:进程会因"节点尚未接入"退出并被 restart 策略拉起,
+#      日志反复出现该提示 —— 按上面第 1 步登录,或配上 AKM_HUB_USERNAME / AKM_HUB_PASSWORD。
 #   3) 文件监听默认关闭(AKM_WATCH_ENABLED=false):Windows / macOS 宿主的 bind mount
 #      不传播 inotify 事件,监听会静默失效。关闭后依赖定时对账(默认 300 秒全量扫描),
 #      变更到 Hub 可见的延迟以对账间隔为准;Linux 宿主可设为 true 获得秒级同步。
@@ -49,6 +53,10 @@ services:
       - AKM_HUB_API_URL=${AKM_HUB_API_URL:-http://host.docker.internal:8000/api}
       - AKM_HUB_URL=${AKM_HUB_URL:-ws://host.docker.internal:8000/ws}
       - AKM_NODE_NAME=${AKM_NODE_NAME:-akm-docker-node}
+      # Hub 管理员账号(可选,见 deploy/.env.example §8):配齐后首次启动自动登录
+      # 换取凭证并写入 akm-node-state 卷,可省去上面第 1 步的交互登录
+      - AKM_HUB_USERNAME=${AKM_HUB_USERNAME:-}
+      - AKM_HUB_PASSWORD=${AKM_HUB_PASSWORD:-}
       - AKM_KNOWLEDGE_ROOTS=/knowledge
       # 文件监听默认关闭:Windows / macOS 宿主的 bind mount 不传播 inotify 事件,
       # 监听会**静默失效**(比报错更危险),故默认依赖定时对账(每 300 秒全量扫描)。

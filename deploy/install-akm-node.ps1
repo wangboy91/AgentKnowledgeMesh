@@ -80,6 +80,7 @@ Write-Host "  2. akm-node              # 之后常驻运行(文件改动自动�
 Write-Host "  3. akm-node --mcp        # 供本机智能体(MCP)调用的检索工具"
 Write-Host ""
 Write-Host "凭证保存在 $HOME\.akm-node\.env,可用 AKM_NODE_ENV_FILE 自定义路径"
+Write-Host "无人值守(服务/计划任务)可改配 AKM_HUB_USERNAME / AKM_HUB_PASSWORD,启动时自动登录"
 Write-Host "如当前终端找不到 akm-node 命令,请重开终端(PATH 刷新)"
 Write-Host ""
 

@@ -434,6 +434,19 @@ akm-node          # 前台常驻;或用 systemd / 任务计划程序 / pm2 托�
 akm-node --help
 ```
 
+**免交互接入(无人值守 / 服务托管)**:把 Hub 账号写进节点配置,首次启动自动登录换取凭证,不需要人守在终端前:
+
+```bash
+# ~/.akm-node/.env(或进程环境变量;部署编排里建议用 EnvironmentFile 注入)
+AKM_HUB_USERNAME=admin
+AKM_HUB_PASSWORD=<管理员密码>
+```
+
+- **仅当本地还没有节点凭证**(`AKM_NODE_TOKEN` 为空)时才登录;已有凭证时直接用,不重复登录、不轮换 token;
+- 换取的凭证写回 `~/.akm-node/.env`,之后可以把这两行移出配置(密码为明文,注意文件权限);
+- 与 `akm-node login` 完全等价,交互登录始终可用;账号密码错误时启动失败(退出码 1)并打印原因;
+- ⚠️ **凭证失效仍需人工处理**:Web 端重置 token 或禁用节点后,无人值守节点不会自动重登(否则会把"禁用"自动解除),需要人工执行一次 `akm-node login` 或在终端确认现场重登。
+
 节点默认扫描 `~/Knowledge`(存在时);配置目录:
 
 ```bash
@@ -459,13 +472,15 @@ docker compose -f deploy/docker-compose.node.yml run --rm akm-node uv run python
 docker compose -f deploy/docker-compose.node.yml up -d
 ```
 
+> 💡 **可以省掉第 1 步**:在 `deploy/.env` 里配上 `AKM_HUB_USERNAME` / `AKM_HUB_PASSWORD`(compose 已透传),容器首次启动会自己登录并把凭证写进 `akm-node-state` 卷,直接 `up -d` 即可 —— 无人值守场景更省事(见 §2.2)。
+
 要点:
 
 - **凭证与同步快照在卷 `akm-node-state`**(容器内 `/root/.akm-node`),重建容器不丢登录;换机器/换卷需重新登录;
 - **Hub 地址以 compose 环境变量为准**(`AKM_HUB_API_URL` / `AKM_HUB_URL`,默认 `host.docker.internal:8000`)。因为进程环境变量优先级高于凭证文件,换 Hub 地址改 `.env` 后 `up -d` 重建容器即可,容器内 `login` 只负责换 token;
   - ⚠️ **端口要对上 Hub 实际暴露的宿主机端口**:Hub 用 deploy compose 起时是 `AKM_HUB_PORT`(默认 `18000`),Hub 在宿主机直接跑(`uv run akm-hub`)才是 `8000`;
 - 知识库目录由 `KNOWLEDGE_DIR` 只读挂载到 `/knowledge`(与 Hub 容器同一套变量);节点侧全部变量见 `deploy/.env.example` §7;
-- 未登录就 `up -d` 会看到容器反复重启并打印"节点尚未接入",先执行第 1 步即可。
+- 既未登录、又没配账号就 `up -d`,容器会反复重启并打印"节点尚未接入";执行第 1 步或补上账号配置即可。
 
 容器方式只影响节点进程怎么跑;Hub 侧看到的是一个普通节点,`akm-node --mcp` 的 MCP 接入(下节)在容器里同样可用(`docker compose -f deploy/docker-compose.node.yml exec akm-node uv run python -m app --mcp`)。
 
@@ -592,6 +607,7 @@ claude mcp add agentknowledge -- akm-node --mcp
 | PowerShell 远程脚本被策略拦截 | 下载脚本后 `powershell -ExecutionPolicy Bypass -File install-akm-node.ps1` |
 | 安装后新终端才有 `akm-node` | PATH 刷新所致,重开终端即可 |
 | 节点凭证失效(Web 端重置过 token) | 重新 `akm-node login`(运行中会主动询问是否现场重登) |
+| 无人值守节点不想人工登录 | 配 `AKM_HUB_USERNAME` / `AKM_HUB_PASSWORD`,启动时自动换取凭证(§2.2)。**仅首次生效**:凭证失效(重置/禁用)后仍需人工 `akm-node login` |
 | 想换知识库目录 | 改 `~/.akm-node/.env` 的 `AKM_KNOWLEDGE_ROOTS` 后重启节点 |
 | 改了文件但 Hub 上没更新 | 确认节点在运行且启动日志有「👁 监听中」;容器 / bind mount 场景监听不可用(见 §2.4),此时依赖对账(默认 300 秒),可调小 `AKM_WATCH_RECONCILE_SECONDS` |
 | 启动日志显示「文件监听已关闭」 | 该部署设了 `AKM_WATCH_ENABLED=false`(节点容器默认如此)。Linux 宿主可改为 `true` 获得秒级同步 |

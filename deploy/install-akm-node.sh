@@ -70,6 +70,7 @@ echo "  2. akm-node              # 常驻运行,同步本地知识目录(文件�
 echo "  3. akm-node --mcp        # 供本机智能体(MCP)调用的检索工具"
 echo ""
 echo "凭证保存在 ~/.akm-node/.env,可用 AKM_NODE_ENV_FILE 自定义路径"
+echo "无人值守(服务/计划任务)可改配 AKM_HUB_USERNAME / AKM_HUB_PASSWORD,启动时自动登录"
 echo ""
 
 # ---------- 6. 后台常驻模板(可选;只打印,不自动注册) ----------
