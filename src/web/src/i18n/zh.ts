@@ -134,6 +134,8 @@ export default {
     ragPending: '索引中',
     ragNotIndexed: '未向量化',
     ragExcluded: '已移出',
+    source: '来源',
+    sourceLocal: '本机',
     saved: '已保存',
   },
   filetree: {
@@ -142,7 +144,7 @@ export default {
     scanNow: '立即扫描',
     expandAll: '全部展开',
     collapseAll: '全部收起',
-    allStatus: '全部 RAG 状态',
+    allStatus: '全部状态',
     statusIndexed: '已索引',
     statusPending: '索引中',
     statusNotIndexed: '未向量化',

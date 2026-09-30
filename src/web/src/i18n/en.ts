@@ -134,6 +134,8 @@ export default {
     ragPending: 'Pending',
     ragNotIndexed: 'Not vectorized',
     ragExcluded: 'Excluded',
+    source: 'Source',
+    sourceLocal: 'This hub',
     saved: 'Saved',
   },
   filetree: {
@@ -142,7 +144,7 @@ export default {
     scanNow: 'Scan Now',
     expandAll: 'Expand all',
     collapseAll: 'Collapse all',
-    allStatus: 'All RAG status',
+    allStatus: 'All statuses',
     statusIndexed: 'Indexed',
     statusPending: 'Pending',
     statusNotIndexed: 'Not vectorized',

@@ -1,8 +1,8 @@
 /**
  * Markdown 阅读器
- * - 顶部 breadcrumb(路径逐段可点击)
- * - 标题 + meta(path / size / updated / tags / RAG status)
- * - 正文 markdown-body(使用我们规范定义的样式)
+ * - 顶部 breadcrumb(路径逐段可点击)—— 完整路径的**唯一载体**,meta 行不再重复
+ * - 标题 + meta(来源 / size / updated / tags / RAG status)
+ * - 正文 markdown-body(使用我们规范定义的样式);与标题重复的首个 H1 会被剥离
  */
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
@@ -11,17 +11,21 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Document } from '../api/client'
 import { formatSize, formatDate, pathToSegments, encodeDocPath } from '../utils/format'
+import { stripLeadingTitle } from '../utils/markdown'
 import {
-  FileIcon,
   ClockIcon,
   CheckIcon,
   HourglassIcon,
   BanIcon,
   MinusIcon,
+  HomeIcon,
+  GlobeIcon,
 } from './Icon'
 
 interface Props {
   document: Document
+  /** 归属节点的名称(仅当文档来自节点时由调用方解析传入;取不到则回退 node_id) */
+  nodeName?: string | null
 }
 
 function ragBadge(status: Document['rag_status']) {
@@ -55,7 +59,7 @@ function ragBadge(status: Document['rag_status']) {
   return { ...s, status: status ?? 'not_indexed' }
 }
 
-export default function MarkdownViewer({ document }: Props) {
+export default function MarkdownViewer({ document, nodeName }: Props) {
   const { t } = useTranslation()
   const size = formatSize(document.size)
   const updated = formatDate(document.updated_at)
@@ -66,6 +70,16 @@ export default function MarkdownViewer({ document }: Props) {
   const cleanedTitle = useMemo(() => {
     return document.title || breadcrumb[breadcrumb.length - 1] || document.path
   }, [document.title, breadcrumb, document.path])
+
+  // 正文首个 H1 与标题同源(入库时即由它提取),渲染前剥离以免标题出现两次
+  const body = useMemo(
+    () => stripLeadingTitle(document.content ?? '', cleanedTitle),
+    [document.content, cleanedTitle],
+  )
+
+  // 文档来源:本机(Hub 自身扫描的目录)或某个接入节点
+  const isLocal = document.node_id === 'local'
+  const sourceLabel = isLocal ? t('knowledge.sourceLocal') : nodeName || document.node_id
 
   return (
     <div className="doc-viewer">
@@ -92,9 +106,10 @@ export default function MarkdownViewer({ document }: Props) {
           <h1>{cleanedTitle}</h1>
 
           <div className="doc-header__meta">
-            <span className="doc-header__meta-item" title={document.path}>
-              <FileIcon />
-              <span className="truncate" style={{ maxWidth: 280 }}>{document.path}</span>
+            {/* 路径已由上方面包屑承载,此处改标文档来源 */}
+            <span className="doc-header__meta-item" title={`${t('knowledge.source')}: ${sourceLabel}`}>
+              {isLocal ? <HomeIcon /> : <GlobeIcon />}
+              <span className="truncate" style={{ maxWidth: 200 }}>{sourceLabel}</span>
             </span>
             <span className="doc-header__meta-item">
               <strong>{size.value}</strong>&nbsp;{size.unit}
@@ -124,7 +139,7 @@ export default function MarkdownViewer({ document }: Props) {
 
         <article className="markdown-body">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {document.content || `*${t('knowledge.emptyContent')}*`}
+            {body || `*${t('knowledge.emptyContent')}*`}
           </ReactMarkdown>
         </article>
       </div>

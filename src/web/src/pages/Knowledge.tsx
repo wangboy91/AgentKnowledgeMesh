@@ -33,6 +33,8 @@ export default function Knowledge() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
+  // 文档来自节点时解析出的节点名(供头部「来源」标识;取不到回退 node_id)
+  const [nodeName, setNodeName] = useState<string | null>(null)
 
   useEffect(() => {
     if (filePath) {
@@ -43,6 +45,26 @@ export default function Knowledge() {
     setEditing(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filePath, selectedNodeId])
+
+  useEffect(() => {
+    if (!document || document.node_id === 'local') {
+      setNodeName(null)
+      return
+    }
+    let cancelled = false
+    api
+      .getNodes()
+      .then((nodes) => {
+        if (cancelled) return
+        setNodeName(nodes.find((n) => n.id === document.node_id)?.name ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setNodeName(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [document])
 
   async function loadDocument(path: string) {
     setLoading(true)
@@ -164,7 +186,7 @@ export default function Knowledge() {
             </button>
           </div>
         )}
-        <MarkdownViewer document={document} />
+        <MarkdownViewer document={document} nodeName={nodeName} />
       </>
     )
   }
