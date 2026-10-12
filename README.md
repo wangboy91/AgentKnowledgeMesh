@@ -182,8 +182,14 @@ docker compose -f deploy/docker-compose.node.yml up -d --build
 | `AKM_HUB_URL`(node) | `ws://localhost:8000/ws` | Hub 地址 |
 | `AKM_HUB_USERNAME` / `AKM_HUB_PASSWORD`(node) | 空 | 可选;配齐后节点启动时自动登录换取凭证(无凭证时生效) |
 | `AKM_UPLOAD_BATCH_BYTES` / `AKM_UPLOAD_BATCH_DOCS`(node) | `524288` / `50` | 上传分批的单请求体上限(字节)/ 条数上限;置 0 或负数为不限 |
+| `AKM_NODE_ENV_FILE` / `AKM_NODE_STATE_DIR`(node) | `~/.akm-node/.env` / `~/.akm-node` | 多环境隔离:凭证文件与运行数据(快照)目录。**必须在启动脚本的进程环境里设置,写进 `.env` 不生效**;仓库提供 `deploy/start-node-prod.ps1` / `.sh` |
 
 完整配置与混合检索调优参数见模板文件内注释。
+
+> 同一台机器上「正式节点长期在线」与「开发仓调试」并行时,按
+> [docs/deployment.md §2.6 正式 / 开发双环境隔离](docs/deployment.md) 搭建:
+> 正式实例用 `uv tool install` 装成独立副本,凭证与快照隔离在 `~/.akm-node-prod`,
+> 与开发实例共用同一份知识库、各连各的 Hub。
 
 ## 文档索引
 
