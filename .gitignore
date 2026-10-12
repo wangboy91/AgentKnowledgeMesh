@@ -42,6 +42,7 @@ openspec/.DS_Store
 
 # AI 助手本地工作区(记忆/截图等临时产物,不入库)
 .workbuddy-ai/
+.workbuddy/
 # 验证截图 / 临时脚本误落到源码目录时的兜底
 src/web/*.png
 src/web/*.mjs
