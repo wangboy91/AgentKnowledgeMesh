@@ -24,6 +24,13 @@ USER_STATE_DIR = Path(
     os.environ.get("AKM_NODE_STATE_DIR") or Path.home() / ".akm-node"
 )
 
+# 该目录是否由进程环境变量「显式指定」。
+# 注意：这里读的是进程环境变量，早于 pydantic-settings 加载 env 文件——
+# 因此 AKM_NODE_STATE_DIR 必须由启动脚本/终端设置，写进 .env 不生效。
+# 用途：state.py 据此判断快照位置，显式指定时不得被包内既有快照抢占（见 openspec
+# 变更 2026-09-30-fix-node-state-isolation）。
+USER_STATE_DIR_EXPLICIT = "AKM_NODE_STATE_DIR" in os.environ
+
 
 class NodeSettings(BaseSettings):
     """Node 配置."""

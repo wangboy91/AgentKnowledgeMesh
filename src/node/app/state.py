@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 
-from app.config import BASE_DIR, USER_STATE_DIR
+from app.config import BASE_DIR, USER_STATE_DIR, USER_STATE_DIR_EXPLICIT
 
 # 默认快照文件位置:
 # - 开发仓内已有快照(<node 包>/data/sync_state.json,已 gitignore)时继续用原位置,
@@ -20,13 +20,22 @@ from app.config import BASE_DIR, USER_STATE_DIR
 _REPO_SNAPSHOT_PATH = BASE_DIR / "data" / "sync_state.json"
 
 
-def resolve_snapshot_path(repo_path: Path, user_path: Path) -> Path:
-    """选择快照位置:开发仓已有快照用原位置,否则用户目录(安装版)."""
+def resolve_snapshot_path(
+    repo_path: Path, user_path: Path, explicit: bool = False
+) -> Path:
+    """选择快照位置.
+
+    - explicit(显式设了 AKM_NODE_STATE_DIR)时以 user_path 为准,不再探测包内快照:
+      否则开发仓跑过一次后包内 data/ 就会永久抢占,显式配置形同虚设,多环境隔离失效;
+    - 未显式指定时保持既有语义:包内已有快照用原位置(存量无感迁移),否则用户目录。
+    """
+    if explicit:
+        return user_path
     return repo_path if repo_path.exists() else user_path
 
 
 DEFAULT_SNAPSHOT_PATH = resolve_snapshot_path(
-    _REPO_SNAPSHOT_PATH, USER_STATE_DIR / "sync_state.json"
+    _REPO_SNAPSHOT_PATH, USER_STATE_DIR / "sync_state.json", USER_STATE_DIR_EXPLICIT
 )
 
 

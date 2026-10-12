@@ -565,6 +565,75 @@ Register-ScheduledTask -TaskName "akm-node" -Action $action -Trigger $trigger -S
 - 其他电脑的智能体经 MCP 查询读到的是 Hub 最新数据;**文档不会下发到各节点本地磁盘**(节点只上行,无下行通道)
 - **上传分批**:一轮同步的文档按体积/条数切为多个请求发送(默认单请求 ≤ 512 KiB / 50 条)。这使得知识库规模不受 Hub 前置反向代理 body 上限的限制——nginx 用默认 `client_max_body_size 1m` 也能首次接入成千上万篇文档。内网直连(无代理)可调大这两个值以减少请求数
 
+### 2.6 正式 / 开发双环境隔离
+
+同一台机器上既要跑长期在线的**正式节点**，又要在开发仓里跑**调试实例**时，两者必须各自独立。
+否则开发调试会直接影响正式同步——最典型的一次故障是快照串环境：属于另一个 Hub 的旧
+`sync_state.json` 让节点误判所有文档"均未变更"，只上报 `{path, hash}` 不带正文，
+被 Hub 全量计入 `rejected`，一篇都没同步成功。
+
+隔离要在**三个维度**同时成立：
+
+| 维度 | 正式实例 | 开发实例 | 手段 |
+| --- | --- | --- | --- |
+| 代码 | `uv tool` 安装的独立副本 | 开发仓工作区 | 安装后与仓内代码解耦，改仓内代码不影响正式 |
+| 凭证 | `~/.akm-node-prod/.env` | `~/.akm-node/.env` | 进程环境变量 `AKM_NODE_ENV_FILE` |
+| 快照 | `~/.akm-node-prod/sync_state.json` | `~/.akm-node/` 或仓内 `data/` | 进程环境变量 `AKM_NODE_STATE_DIR` |
+| 身份 | 显式指定独立 `AKM_NODE_ID` | 默认按机器名生成 | 避免两个环境在 Hub 上互相顶掉 token |
+
+知识库目录（`AKM_KNOWLEDGE_ROOTS`）**可以共用**：同一份文件被两个节点各推给各自的 Hub，
+互不干扰（文件只是只读来源）。
+
+#### ⚠️ 这两个变量必须写在启动脚本里，不能写进 `.env`
+
+`AKM_NODE_ENV_FILE` 与 `AKM_NODE_STATE_DIR` 由 `app/config.py` 在**模块 import 时**用
+`os.environ` 读取，**早于** pydantic-settings 加载 `.env` 文件——写进 `.env` 不生效，
+且不报错。仓库提供了启动脚本把这件事固化下来：
+
+```bash
+# 正式环境（Windows PowerShell）
+powershell -ExecutionPolicy Bypass -File deploy\start-node-prod.ps1
+# 正式环境（Linux / macOS / Git Bash）
+./deploy/start-node-prod.sh
+```
+
+脚本会把两个变量设进**当前进程环境**（不污染系统环境变量）后调用全局 `akm-node`，
+参数照常透传（`start-node-prod.ps1 login` 即交互登录）。
+
+#### 搭建步骤
+
+```bash
+# 1) 从源码构建独立实例（升级/修复即重跑同一条命令，幂等）
+cd src/node && uv tool install . --reinstall
+uv tool update-shell            # 一次性：把 ~/.local/bin 加进 PATH
+
+# 2) 建正式环境的数据目录与配置
+mkdir -p ~/.akm-node-prod
+#   ~/.akm-node-prod/.env 需含：Hub 地址、AKM_KNOWLEDGE_ROOTS、AKM_NODE_NAME、
+#   独立 AKM_NODE_ID，以及首次自动登录用的 AKM_HUB_USERNAME / AKM_HUB_PASSWORD
+
+# 3) 启动（首次自动登录并写回 AKM_NODE_TOKEN；之后可删掉账号密码）
+powershell -ExecutionPolicy Bypass -File deploy\start-node-prod.ps1
+```
+
+> **`AKM_NODE_ID` 必须两边不同**。若共用同一 `node_id`，任一实例登录都会轮换节点 token，
+> 另一实例随即被 Hub 以 401 顶掉、触发重新登录、再轮换——形成无休止的互顶。
+> 用 `start-node-prod` 脚本启动的实例，其 `AKM_NODE_NAME` 也会在日志里体现，便于辨认。
+
+#### 验证隔离是否生效
+
+| 判据 | 期望 |
+| --- | --- |
+| 快照落点 | `~/.akm-node-prod/sync_state.json` 存在并随同步更新 |
+| 开发侧未被触碰 | `~/.akm-node/.env` 与 `~/.akm-node/sync_state.json` 内容不变；仓内 `src/node/data/` 未被创建 |
+| 身份独立 | 启动日志 `Node:` 行显示正式实例的 `AKM_NODE_NAME`，注册的 `node_id` 与开发实例不同 |
+| 同步正确 | Hub 侧 `GET /api/documents?node_id=<正式 node_id>` 篇数 == 本地 Markdown 篇数 |
+
+两个实例**可以同时运行**（同一份知识库、各自 Hub、各自快照），不做单实例互斥。
+
+> 排查提示：若发现"文档莫名没同步"，先看快照落在哪——`AKM_NODE_STATE_DIR` 被静默忽略
+> （落在仓内 `src/node/data/`）是这类现象最常见的根因。
+
 ---
 
 ## 3. 本机智能体接入检索(MCP)
