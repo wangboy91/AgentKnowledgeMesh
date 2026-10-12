@@ -67,3 +67,5 @@ cd src/server && uv run python eval/run_eval.py
 - Windows 下后台/管道运行必须 UTF-8 输出(已在入口统一 reconfigure;新增 print 保持编码安全)
 - 向量库 = PostgreSQL + pgvector(主库为 SQLite 时可独立配置,见 `.env.example` §4)
 - `src/server/.env` 属本机私有配置,不入库;勿把其中密钥写入任何文档/日志
+
+- HTTP MCP:每次 POST 的 Principal 进入工具上下文，写工具与 REST 共用 admin 角色判定；SSE 按凭证绑定会话，禁止跨凭证回发。定向回归见 src/server/tests/test_http_mcp_auth.py。

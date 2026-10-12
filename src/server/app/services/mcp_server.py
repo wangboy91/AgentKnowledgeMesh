@@ -15,6 +15,9 @@
 
 import asyncio
 
+from fastapi import HTTPException
+from app.services.auth import Principal, authorize_principal
+
 import mcp.types as types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -155,6 +158,17 @@ async def handle_call_tool(ctx, params: types.CallToolRequest) -> types.CallTool
     arguments = params.arguments or {}
 
     try:
+        # HTTP Request 随每次 POST 的消息 metadata 进入上下文;不缓存 SSE 建连角色。
+        # stdio 无 HTTP 请求,保持本机信任。HTTP 缺少应用身份时拒绝执行。
+        request = getattr(ctx, "request", None)
+        if request is not None:
+            principal = request.scope.get("akm_principal")
+            if not isinstance(principal, Principal):
+                raise HTTPException(status_code=401, detail="Not authenticated")
+            authorize_principal(
+                principal,
+                "admin" if name in {"create_document", "update_document"} else "viewer",
+            )
         if name == "search_documents":
             return await _search_documents(
                 query=arguments["query"],
@@ -183,6 +197,10 @@ async def handle_call_tool(ctx, params: types.CallToolRequest) -> types.CallTool
             )
         else:
             raise ValueError(f"Unknown tool: {name}")
+    except HTTPException as e:
+        return types.CallToolResult(content=[
+            types.TextContent(type="text", text=f"权限不足 ({e.status_code}): {e.detail}")
+        ], isError=True)
     except KeyError as e:
         return types.CallToolResult(content=[
             types.TextContent(type="text", text=f"缺少参数: {e.args[0]}")

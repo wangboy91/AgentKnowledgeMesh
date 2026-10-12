@@ -4,9 +4,13 @@
 让 Claude Code、Cursor 等工具可以通过 HTTP 连接到 MCP Server。
 """
 
-from fastapi import APIRouter, Depends, Request
+import hashlib
 
-from app.services.auth import require_auth
+from fastapi import APIRouter, Depends, Request
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+from mcp.server.auth.provider import AccessToken
+
+from app.services.auth import Principal, require_auth
 from sse_starlette.sse import EventSourceResponse
 from mcp.server.sse import SseServerTransport
 
@@ -26,6 +30,15 @@ router = APIRouter()
 # 通告为 `{AKM_ROOT_PATH}/api/mcp/messages`(见 subpath-deployment)。
 MESSAGES_PATH = "/api/mcp/messages"
 
+def _bind_http_principal(request: Request, principal: Principal) -> None:
+    """绑定当前消息权限与 SSE 凭证归属,不在归属表保留明文 token。"""
+    credential = request.headers["authorization"][7:].strip()
+    request.scope["akm_principal"] = principal
+    request.scope["user"] = AuthenticatedUser(AccessToken(
+        token="", client_id=hashlib.sha256(credential.encode()).hexdigest(), scopes=[],
+    ))
+
+
 # SSE 传输实例
 sse_transport = SseServerTransport(MESSAGES_PATH)
 
@@ -36,6 +49,7 @@ async def mcp_sse(request: Request, principal=Depends(require_auth("viewer"))):
 
     客户端连接此端点接收服务器推送的消息。
     """
+    _bind_http_principal(request, principal)
     async with sse_transport.connect_sse(
         request.scope,
         request.receive,
@@ -54,6 +68,7 @@ async def mcp_messages(request: Request, principal=Depends(require_auth("viewer"
 
     客户端通过 POST 发送请求到此端点。
     """
+    _bind_http_principal(request, principal)
     await sse_transport.handle_post_message(
         request.scope,
         request.receive,

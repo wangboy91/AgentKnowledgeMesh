@@ -83,6 +83,8 @@
 | stdio | `uv run akm-hub --mcp` | 本机 stdio 模式(免鉴权,本机信任) |
 | stdio | `uv run akm-node --mcp` | 节点本地代理(节点凭证转调 Hub HTTP) |
 
+HTTP MCP 权限：viewer 用户与 viewer API Token 可检索和读取；create_document/update_document 要求 admin，拒绝时工具结果为 isError=true 且不写入。每次消息按当前角色判定。SSE 会话绑定建立连接的同一凭证；其他凭证（含同一用户新签发 JWT）回发返回 404，吊销凭证返回 401，断开后旧会话返回 404。Hub stdio 保持本机信任。端点与工具参数不变。
+
 工具集(三形态同名同参同输出):
 
 | 工具 | 参数 | 说明 |

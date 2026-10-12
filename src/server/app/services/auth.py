@@ -144,6 +144,24 @@ async def resolve_principal(token: str, session: AsyncSession) -> Optional[Princ
     return None
 
 
+def authorize_principal(
+    principal: Principal, min_role: str = "viewer", *,
+    allow_node: bool = False, node_write: bool = False,
+) -> Principal:
+    """REST 与 HTTP MCP 共用角色判定;节点写作用域仍由业务入口校验。"""
+    if principal.kind == "node":
+        if node_write:
+            return principal
+        if not allow_node:
+            raise HTTPException(status_code=403, detail="Node credentials are read-only")
+        if min_role != "viewer":
+            raise HTTPException(status_code=403, detail="Admin role required")
+        return principal
+    if min_role == "admin" and principal.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return principal
+
+
 def require_auth(min_role: str = "viewer", allow_node: bool = False, node_write: bool = False):
     """鉴权依赖工厂.
 
@@ -167,17 +185,9 @@ def require_auth(min_role: str = "viewer", allow_node: bool = False, node_write:
         principal = await resolve_principal(token, session)
         if principal is None:
             raise HTTPException(status_code=401, detail="Invalid or expired credentials")
-        if principal.kind == "node":
-            if node_write:
-                return principal
-            if not allow_node:
-                raise HTTPException(status_code=403, detail="Node credentials are read-only")
-            if min_role != "viewer":
-                raise HTTPException(status_code=403, detail="Admin role required")
-            return principal
-        if min_role == "admin" and principal.role != "admin":
-            raise HTTPException(status_code=403, detail="Admin role required")
-        return principal
+        return authorize_principal(
+            principal, min_role, allow_node=allow_node, node_write=node_write,
+        )
 
     return dependency
 

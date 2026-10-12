@@ -160,7 +160,7 @@ docker compose -f deploy/docker-compose.node.yml up -d --build
 
 节点代理经 stdio 提供与 Hub 同名的**五个**工具:只读 `search_documents` / `get_document` / `list_documents`,以及写回 `create_document` / `update_document`,内部转调 Hub HTTP API(统一 10s 超时);`search_documents` 支持 `mode=semantic` 走 Hub 语义混合检索(向量⊕关键词按权重融合,**需 Hub 为 PostgreSQL 模式**);节点本地无凭证(未执行过 `akm-node login`)时会输出"请先执行 akm-node login"并退出。
 
-**智能体写回**:`create_document(path, content, title?)` 新建、`update_document(document_id, content)` 覆盖更新。经节点代理写入时,文档归属该节点(`node_id` 由 Hub 依节点凭证强制,代理无法指定),且只能更新本节点名下的文档(跨节点 403);经 Hub stdio/SSE 写入时归属 `local`。路径唯一性按 `(node_id, path)` 判定——不同机器的同名路径可共存。写回内容立即进入检索与多机分发,其他电脑的智能体随即检索得到。写回**不落本地磁盘**(文档只存在于 Hub),也不会删除任何文档。详见 [docs/agent-write-back-design.md](docs/agent-write-back-design.md)。
+**智能体写回**:`create_document(path, content, title?)` 新建、`update_document(document_id, content)` 覆盖更新。经节点代理写入时,文档归属该节点(`node_id` 由 Hub 依节点凭证强制,代理无法指定),且只能更新本节点名下的文档(跨节点 403);经 Hub stdio/SSE 写入时归属 `local`。HTTP SSE 的 viewer 用户与 viewer API Token 仅可读，写工具要求 admin；会话只能由建立它的同一凭证回发消息。路径唯一性按 `(node_id, path)` 判定——不同机器的同名路径可共存。写回内容立即进入检索与多机分发,其他电脑的智能体随即检索得到。写回**不落本地磁盘**(文档只存在于 Hub),也不会删除任何文档。详见 [docs/agent-write-back-design.md](docs/agent-write-back-design.md)。
 
 > **写回是持久的**(2026-09-30 起):经 Hub 写入或编辑过的文档,内容来源标记为 `agent`,**不再被磁盘文件覆盖或删除**——此前"改完过几分钟又变回去"的问题已修复。代价是这类文档的内容以 Hub 为准:对应磁盘文件从此无法再更新它,且目前没有文档删除入口。文件扫描派生(未改写过)的文档行为不变,仍随磁盘新增/修改/删除。
 
