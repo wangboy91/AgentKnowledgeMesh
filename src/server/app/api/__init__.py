@@ -16,7 +16,10 @@ from app.api.rag import router as rag_router
 from app.api.search import router as search_router
 from app.api.settings import router as settings_router
 
+from app.api.owner_files import router as owner_files_router
+
 router = APIRouter()
+router.include_router(owner_files_router, prefix="/owner-files", tags=["owner-files"])
 
 router.include_router(auth_router, prefix="/auth", tags=["auth"])
 router.include_router(documents_router, prefix="/documents", tags=["documents"])

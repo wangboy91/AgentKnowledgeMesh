@@ -35,6 +35,9 @@ USER_STATE_DIR_EXPLICIT = "AKM_NODE_STATE_DIR" in os.environ
 class NodeSettings(BaseSettings):
     """Node 配置."""
 
+    owner_readonly_enabled: bool = False
+    owner_scan_seconds: float = Field(3.0, ge=1, le=300)
+
     # Hub 连接
     hub_url: str = Field(
         "ws://localhost:8000/ws",

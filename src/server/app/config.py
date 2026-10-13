@@ -32,6 +32,11 @@ def normalize_root_path(raw: str) -> str:
 class Settings(BaseSettings):
     """应用配置，支持环境变量覆盖."""
 
+    # 严格 owner 只读模式：默认关闭，旧数据不自动清理。
+    owner_readonly_enabled: bool = False
+    owner_memory_clients: str = ""  # 经核验的 node:/user:/token: 主体列表；缺省不开放正文
+    owner_read_timeout: float = Field(5.0, gt=0, le=60)
+
     # 服务配置
     app_name: str = Field(
         "AgentKnowledgeMesh",

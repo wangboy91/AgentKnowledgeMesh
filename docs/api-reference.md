@@ -128,3 +128,27 @@ HTTP MCP 权限：viewer 用户与 viewer API Token 可检索和读取；create_
 - **🆕 agent 来源免疫**：文档 `origin` 为 `agent` 时，命中该路径的条目一律计入 `skipped`（原因 `agent origin`）——既不覆盖、也**不计入 `rejected`**（计入 rejected 会让节点把该路径移出快照、每轮带全文重传而永不收敛）；`deletions` 与隐式缺失推导同样不删除这类文档。
 - **删除语义**：请求显式携带 `deletions` 字段（新协议）时按列表删除、不做隐式推导；字段缺省（旧版全量推送）时保留"列表缺失即删除"的兼容行为。
 - **幂等**：节点仅在收到 200 响应后更新本地快照（`<node>/data/sync_state.json`，path → hash）；失败不动快照，下轮按相同差异重试。
+
+## 严格 owner 只读切片（2026-10-12，默认关闭）
+
+`AKM_OWNER_READONLY_ENABLED=false` 为缺省。Hub 与 Node 显式开启后，Node 必须配置知识根；只有 owner 磁盘保留正文，新 Hub 表 `owner_files`、`owner_read_grants`、`owner_versions` 只保存身份、归属、根 ID、路径、代次、版本、hash、大小、可达/删除状态与读取授权。Node 上报完整元数据 manifest，只有完整且可达根才推导源删除；墓碑不可由旧消息复活。
+
+Hub `AKM_OWNER_MEMORY_CLIENTS` 缺省为空。它是部署方已核验“不持久保存正文/工具输入输出/会话”的主体清单，不是客户端自报 header；形式为 `node:<node_id>`、`user:<username>`、`token:<api_token_id>`，逗号分隔。该清单不替代 owner 单文件 read grant。没有核验的主体不开放正文，admin 也不能跳过 owner 授权。第三方正文 MCP 默认不开放。
+
+| 接口 | 条件与结果 |
+| --- | --- |
+| `GET /api/owner-files?q=` | 凭证 + 自己拥有或有效读取授权；仅路径元数据检索，过滤墓碑 |
+| `GET /api/owner-files/{file_id}` | 当前元数据；墓碑 410，未授权 403 |
+| `GET /api/owner-files/{file_id}/history` | revision/hash/deleted 元数据；不提供历史正文，墓碑 410 |
+| `PUT /api/owner-files/{file_id}/grants` | 仅 owner Node 凭证；body `{subject, expires_at, revoked}`，有效期最长 30 天，绑定当前 generation；不创建新凭据 |
+| `GET /api/owner-files/{file_id}/content` | 有效 read grant + 核验主体；实时 owner 内存读取，返回 `{file, content}`，`Cache-Control: no-store` |
+| `POST /api/owner-files/{file_id}/search` | 同上；body `{query}`，在线 owner 单文件全文检索，返回 `{file, snippet}`；查询不放 URL，Hub 无全文索引/embedding |
+| `PUT /api/owner-files/{file_id}/content` | 写回未支持；viewer/只读 token 403，写资格主体 501；不读取或保存提交正文，不返回保存成功 |
+
+正文读取返回前再次检查身份、owner 状态、授权、代次/版本与墓碑。owner 离线、目录不可达或超时返回 503；版本变化/不匹配为 409；无凭证 401。正文上限 1 MiB，manifest 上限 5000 条；超限/不完整扫描视作不可达，不推导批量删除。只读 RPC 使用单进程 Hub 的内存连接表；当前切片不支持多 worker 连接协调。
+
+Node `AKM_OWNER_SCAN_SECONDS` 缺省 3 秒，新增 `/owner-ws` 协议仅接受既有 Node token：`owner_register` → `owner_ack(capability=owner-readonly-v1)`；`owner_manifest` 只含已校验元数据（不接受 content 字段）；`owner_request`/`owner_response` 关联随机 request_id 并绑定已认证会话。每次 Node 回报重新核验 token；禁用/轮换后断开。正文不进入持久队列/日志/缓存。Node 状态库按 Hub URL + node_id 隔离且仅存元数据；不能丢弃状态后把新 ID 默认为原文件延续。
+
+严格模式屏障关闭旧 `/api/documents`、`/api/search`、`/api/rag`、`/api/context`、`/api/mcp`、`/api/convert`、节点 `documents/sync` 及 `/ws` 全文路径；Hub stdio MCP 工具清单为空且调用返回错误。默认模式保持原行为，旧正文、chunk、向量、备份并未清理；启用开关不等于整个部署已零副本。回退开关会重新开放旧入口，不得作为严格存储迁移后的安全回退方案。
+
+没有新增 Web 编辑页、历史正文恢复或 remote write-back。第三方 Agent、扩展、OS swap/崩溃转储及用户复制不受应用自动保证。当前验证为 Windows 两个逻辑 owner + 进程内 Hub，不能代替真实 Mac/Windows 或 PostgreSQL 验收。

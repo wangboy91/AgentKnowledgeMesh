@@ -74,7 +74,7 @@ async def _migrate_columns() -> None:
 async def init_db() -> None:
     """初始化数据库，创建所有表."""
     # 显式导入全部模型,确保注册到 Base.metadata(不依赖包 __init__ 的副作用)
-    from app.models import ApiToken, AppSetting, Document, Node, User  # noqa: F401
+    from app.models import ApiToken, AppSetting, Document, Node, User, OwnerFile, OwnerReadGrant, OwnerVersion  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

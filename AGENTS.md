@@ -69,3 +69,5 @@ cd src/server && uv run python eval/run_eval.py
 - `src/server/.env` 属本机私有配置,不入库;勿把其中密钥写入任何文档/日志
 
 - HTTP MCP:每次 POST 的 Principal 进入工具上下文，写工具与 REST 共用 admin 角色判定；SSE 按凭证绑定会话，禁止跨凭证回发。定向回归见 src/server/tests/test_http_mcp_auth.py。
+
+- 严格 owner 只读模式：`AKM_OWNER_READONLY_ENABLED` 默认 false；Hub 新表仅元数据，Node 使用 `akm_shared.owner_reader` 在 owner 安全读取、扫描并上报墓碑。`app/api/owner_files.py` 与 `services/owner_gateway.py` 提供单进程内存 RPC，`middleware_owner.py` 隔离旧全文入口，MCP 不开放正文。写回返回 501，不能宣称完整闭环或已清理旧副本。正文主体白名单缺省空；Node 必须显式根配置。新增验证在 server/node 的 tests/test_owner_readonly.py。

@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
     async with async_session() as session:
         vectorization_enabled = await get_vectorization_enabled(session)
 
-    if vectorization_enabled:
+    if vectorization_enabled and not settings.owner_readonly_enabled:
         # 初始化向量数据库表（失败不阻塞启动，RAG 功能降级可用）
         try:
             from app.services.rag.vector_store import init_table
@@ -128,6 +128,12 @@ def create_app() -> FastAPI:
         # 会按需剥掉它,因此「代理剥离前缀」与「代理保留前缀」两种反代写法都能命中。
         root_path=settings.root_path,
     )
+
+    # 严格模式完全隔离旧全文入口；保留旧数据库以供显式迁移，绝不清理。
+    from app.api.owner_files import owner_websocket
+    from app.middleware_owner import OwnerModeBarrier
+    app.add_middleware(OwnerModeBarrier)
+    app.add_api_websocket_route("/owner-ws", owner_websocket)
 
     # CORS 配置（开发环境允许前端跨域）
     app.add_middleware(

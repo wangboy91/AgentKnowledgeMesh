@@ -107,6 +107,10 @@ class HubClient:
 
     async def run(self):
         """运行客户端主循环."""
+        if self.transport.settings.owner_readonly_enabled:
+            from app.owner_readonly import OwnerReadClient
+            await OwnerReadClient(self.transport.settings).run()
+            return
         while True:
             try:
                 if await self.transport.connect():

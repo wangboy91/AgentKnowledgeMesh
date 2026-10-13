@@ -135,6 +135,9 @@ def main():
     # 本地 MCP 代理模式:智能体拉起子进程,stdio 提供与 Hub 同名的五个工具;
     # 单职责短生命周期进程,不启动同步循环
     if "--mcp" in sys.argv:
+        if config.owner_readonly_enabled:
+            print("严格 owner 模式尚不开放第三方正文 MCP，写回未支持")
+            sys.exit(1)
         from app.mcp_proxy import run_mcp_proxy
 
         asyncio.run(run_mcp_proxy())

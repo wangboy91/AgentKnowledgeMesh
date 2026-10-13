@@ -203,3 +203,9 @@ docker compose -f deploy/docker-compose.node.yml up -d --build
 ## License
 
 MIT
+
+### 严格 owner 只读切片（默认关闭）
+
+已增加稳定 owner 元数据、显式单文件读取授权、在线 owner 读取/正文检索和源删除墓碑。`AKM_OWNER_READONLY_ENABLED` 默认关闭；严格模式停止旧全文上传/读取和正文 MCP，Hub 只新增元数据，不保存新正文/片段/embedding。正文读取还需核验客户端主体，缺省不开放。owner 离线明确失败，目录不可达不能当删除。
+
+远程写回仍未支持，不能报告保存成功；现有 Hub 全文与备份没有迁移或删除，不能声称整个部署已满足零副本。当前为隔离验证的 API/Node 只读切片，尚无新 Web 页面，也未进行真实跨设备验收。详情与接口见 [API 文档](docs/api-reference.md) 的“严格 owner 只读切片”，规划与剩余写回问题见 `openspec/changes/2026-10-12-add-owner-remote-writeback/`。

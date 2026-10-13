@@ -51,6 +51,9 @@ def _spawn_index(upserts: list[dict]) -> None:
 
 async def handle_list_tools(ctx, params) -> types.ListToolsResult:
     """返回可用工具列表."""
+    from app.config import settings
+    if settings.owner_readonly_enabled:
+        return types.ListToolsResult(tools=[])
     return types.ListToolsResult(tools=[
         types.Tool(
             name="search_documents",
@@ -154,6 +157,9 @@ async def handle_list_tools(ctx, params) -> types.ListToolsResult:
 
 async def handle_call_tool(ctx, params: types.CallToolRequest) -> types.CallToolResult:
     """处理工具调用."""
+    from app.config import settings
+    if settings.owner_readonly_enabled:
+        return types.CallToolResult(isError=True, content=[types.TextContent(type="text", text="严格 owner 模式不开放正文 MCP，写回未支持")])
     name = params.name
     arguments = params.arguments or {}
 

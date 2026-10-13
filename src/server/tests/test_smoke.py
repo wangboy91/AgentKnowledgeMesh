@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from app.config import BASE_DIR, settings
+from app.config import BASE_DIR, Settings, settings
 from app.main import app
 
 client = TestClient(app)
@@ -11,8 +11,10 @@ client = TestClient(app)
 def test_config_paths_anchored():
     """配置路径应锚定到项目目录，与 CWD 无关."""
     assert BASE_DIR.name == "server"
-    assert settings.db_path.endswith("agentvault.db")
-    assert str(BASE_DIR) in settings.db_path
+    # 检查默认值，运行配置允许 AKM_DB_PATH 指向隔离数据库。
+    default_path = Settings.model_fields["db_path"].default
+    assert default_path.endswith("agentvault.db")
+    assert str(BASE_DIR) in default_path
 
 
 def test_health_endpoint():
